@@ -1,0 +1,395 @@
+:root {
+	--color-bg: #fafaf9;
+	--color-surface: #ffffff;
+	--color-border: #e5e5e5;
+	--color-text: #1c1917;
+	--color-text-muted: #78716c;
+	--color-primary: #2563eb;
+	--color-primary-light: #dbeafe;
+	--color-go: #16a34a;
+	--color-go-light: #dcfce7;
+	--color-skip: #6b7280;
+	--color-skip-light: #f3f4f6;
+	--color-warn: #d97706;
+	--color-warn-light: #fef3c7;
+	--color-danger: #dc2626;
+	--radius: 8px;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+body {
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+	background: var(--color-bg);
+	color: var(--color-text);
+	line-height: 1.6;
+}
+
+.container {
+	max-width: 960px;
+	margin: 0 auto;
+	padding: 0 1.5rem;
+}
+
+.card {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	padding: 1.5rem;
+	box-shadow: var(--shadow);
+}
+
+.card + .card {
+	margin-top: 1rem;
+}
+
+h1 {
+	font-size: 1.75rem;
+	font-weight: 700;
+	margin-bottom: 0.5rem;
+}
+
+h2 {
+	font-size: 1.25rem;
+	font-weight: 600;
+	margin-bottom: 0.75rem;
+}
+
+h3 {
+	font-size: 1rem;
+	font-weight: 600;
+	margin-bottom: 0.5rem;
+}
+
+p {
+	margin-bottom: 0.75rem;
+}
+
+.muted {
+	color: var(--color-text-muted);
+	font-size: 0.875rem;
+}
+
+button {
+	cursor: pointer;
+	font-family: inherit;
+	font-size: 0.875rem;
+	border: none;
+	border-radius: var(--radius);
+	padding: 0.625rem 1.25rem;
+	font-weight: 500;
+	transition: opacity 0.15s;
+}
+
+button:hover {
+	opacity: 0.85;
+}
+
+button.primary {
+	background: var(--color-primary);
+	color: white;
+}
+
+button.secondary {
+	background: var(--color-border);
+	color: var(--color-text);
+}
+
+button.go {
+	background: var(--color-go);
+	color: white;
+}
+
+select {
+	font-family: inherit;
+	font-size: 0.875rem;
+	padding: 0.5rem;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	background: var(--color-surface);
+	color: var(--color-text);
+}
+
+input[type='range'] {
+	width: 100%;
+}
+
+input[type='text'],
+input[type='password'],
+textarea {
+	font-family: inherit;
+	font-size: 0.875rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	width: 100%;
+}
+
+.stepper {
+	display: flex;
+	gap: 0.25rem;
+	padding: 1rem 0;
+}
+
+.stepper-step {
+	flex: 1;
+	text-align: center;
+	padding: 0.5rem;
+	font-size: 0.75rem;
+	font-weight: 500;
+	border-radius: var(--radius);
+	background: var(--color-border);
+	color: var(--color-text-muted);
+	text-decoration: none;
+}
+
+.stepper-step.active {
+	background: var(--color-primary);
+	color: white;
+}
+
+.stepper-step.completed {
+	background: var(--color-go-light);
+	color: var(--color-go);
+}
+
+.tier-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.5rem 0;
+}
+
+.tier-bar-label {
+	width: 80px;
+	font-size: 0.8rem;
+	font-weight: 500;
+	text-align: right;
+}
+
+.tier-bar-track {
+	flex: 1;
+	height: 24px;
+	background: var(--color-border);
+	border-radius: 4px;
+	position: relative;
+	overflow: hidden;
+}
+
+.tier-bar-fill {
+	height: 100%;
+	border-radius: 4px;
+	transition: width 0.3s ease;
+}
+
+.tier-bar-amount {
+	width: 90px;
+	font-size: 0.8rem;
+	color: var(--color-text-muted);
+}
+
+.badge {
+	display: inline-block;
+	padding: 0.125rem 0.5rem;
+	border-radius: 999px;
+	font-size: 0.75rem;
+	font-weight: 500;
+}
+
+.badge.go {
+	background: var(--color-go-light);
+	color: var(--color-go);
+}
+
+.badge.skip {
+	background: var(--color-skip-light);
+	color: var(--color-skip);
+}
+
+.badge.warn {
+	background: var(--color-warn-light);
+	color: var(--color-warn);
+}
+
+.nav-buttons {
+	display: flex;
+	justify-content: space-between;
+	padding: 1.5rem 0;
+}
+
+.checkbox-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 0.75rem;
+}
+
+.checkbox-card {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.75rem;
+	padding: 0.75rem 1rem;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	cursor: pointer;
+	transition: border-color 0.15s, background 0.15s;
+}
+
+.checkbox-card:hover {
+	border-color: var(--color-primary);
+}
+
+.checkbox-card.selected {
+	border-color: var(--color-primary);
+	background: var(--color-primary-light);
+}
+
+.checkbox-card input {
+	margin-top: 0.2rem;
+}
+
+.radio-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.radio-option {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.75rem;
+	padding: 0.75rem 1rem;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	cursor: pointer;
+	transition: border-color 0.15s, background 0.15s;
+}
+
+.radio-option:hover {
+	border-color: var(--color-primary);
+}
+
+.radio-option.selected {
+	border-color: var(--color-primary);
+	background: var(--color-primary-light);
+}
+
+.radio-option input {
+	margin-top: 0.2rem;
+}
+
+.segmented {
+	display: flex;
+	gap: 0;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	overflow: hidden;
+}
+
+.segmented button {
+	flex: 1;
+	border-radius: 0;
+	padding: 0.75rem 0.5rem;
+	background: var(--color-surface);
+	color: var(--color-text);
+	border-right: 1px solid var(--color-border);
+	font-size: 0.75rem;
+}
+
+.segmented button:last-child {
+	border-right: none;
+}
+
+.segmented button.active {
+	background: var(--color-primary);
+	color: white;
+}
+
+.summary-card {
+	position: sticky;
+	bottom: 0;
+	z-index: 10;
+	background: var(--color-surface);
+	border-top: 2px solid var(--color-primary);
+	padding: 1rem 1.5rem;
+	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.decision-card {
+	padding: 2rem;
+	text-align: center;
+	border-radius: var(--radius);
+	border: 2px solid;
+}
+
+.decision-card.go {
+	border-color: var(--color-go);
+	background: var(--color-go-light);
+}
+
+.decision-card.skip {
+	border-color: var(--color-skip);
+	background: var(--color-skip-light);
+}
+
+.decision-card.warn {
+	border-color: var(--color-warn);
+	background: var(--color-warn-light);
+}
+
+.flag-card {
+	padding: 1rem;
+	border-left: 4px solid var(--color-warn);
+	background: var(--color-warn-light);
+	border-radius: 0 var(--radius) var(--radius) 0;
+	margin-top: 0.75rem;
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.875rem;
+}
+
+th,
+td {
+	padding: 0.5rem 0.75rem;
+	text-align: left;
+	border-bottom: 1px solid var(--color-border);
+}
+
+th {
+	font-weight: 600;
+	background: var(--color-bg);
+}
+
+.drop-zone {
+	border: 2px dashed var(--color-border);
+	border-radius: var(--radius);
+	padding: 3rem;
+	text-align: center;
+	cursor: pointer;
+	transition: border-color 0.15s;
+}
+
+.drop-zone:hover,
+.drop-zone.dragover {
+	border-color: var(--color-primary);
+}
+
+@media (max-width: 640px) {
+	.checkbox-grid {
+		grid-template-columns: 1fr;
+	}
+	.segmented {
+		flex-direction: column;
+	}
+	.segmented button {
+		border-right: none;
+		border-bottom: 1px solid var(--color-border);
+	}
+}

@@ -1,7 +1,11 @@
 .agents/bin/
 .agents/session.json
+.agents/completion-state.json
 .swain-init
 .claude/skills/swain/
 .claude/skills/swain-*/
 .agents/skills/swain/
 .agents/skills/swain-*/
+node_modules/
+build/
+.svelte-kit/
