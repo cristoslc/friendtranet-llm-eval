@@ -39,8 +39,45 @@ Can we assemble 25 curated multi-turn conversations from permissively licensed p
 - Each conversation passes DESIGN-006 quality criteria.
 - Coverage gap report identifies which categories need synthetic supplementation.
 
+## Findings
+
+### License corrections
+
+The original spec (v9) stated incorrect licenses for some datasets:
+
+- **LMSYS-Chat-1M:** listed as Apache 2.0 but actually requires a custom license agreement that restricts redistribution. **Excluded** from curated samples.
+- **WildBench:** listed as MIT but is actually CC-BY-4.0. Still permissive enough for redistribution.
+- **MT-Bench:** listed as Apache 2.0 but is actually CC-BY-4.0. Still permissive.
+
+### Results
+
+Assembled **13 conversations** from WildBench (10) and MT-Bench (3). This falls short of the 25 target and 20 minimum.
+
+**Coverage achieved (5 of 10 categories):**
+
+| Category | Count | Source |
+|----------|-------|--------|
+| household | 4 | WildBench. |
+| creative | 3 | WildBench + MT-Bench. |
+| professional | 3 | WildBench + MT-Bench. |
+| financial | 1 | WildBench. |
+| political | 2 | MT-Bench. |
+
+**Coverage gaps (5 categories, 0 conversations):**
+
+- health, intimate, thirdparty, religious, other — no viable candidates in public datasets, as DESIGN-006 predicted.
+
+### Category mapping quality
+
+WildBench conversations were mapped from their native tags (Planning, Creative Writing, etc.) to our W2 sovereignty-gated categories. Some mappings are loose — e.g., "Planning" → "household" includes non-household planning tasks. A manual review pass would improve category accuracy.
+
+### Recommendation
+
+The 13-conversation curated set is a viable starting point for Path 1 (free preview). To reach the 25 target, use Path 3 (synthetic generation via OpenRouter) for the 5 missing categories. This is the design-intended approach per DESIGN-004 and the original spec.
+
 ## Lifecycle
 
 | Phase | Date | Commit | Notes |
 |-------|------|--------|-------|
 | Active | 2026-04-11 | | Initial creation. |
+| Complete | 2026-04-11 | c8e7c17 | 13 conversations sourced. 5 categories covered, 5 need synthetic. |
