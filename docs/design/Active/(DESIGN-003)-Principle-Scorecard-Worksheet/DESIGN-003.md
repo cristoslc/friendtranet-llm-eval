@@ -91,7 +91,12 @@ Bottom card showing:
 - Stance category.
 - Raw WTP, compromise reduction, adjusted WTP ($/year).
 - Combined W1+W2 total (risk + principle).
-- Tier comparison: which hardware tiers are economically justified by the combined total. Highlighted tier names with checkmarks or x-marks.
+- Tier comparison: which hardware tiers are economically justified by the combined total. Tier thresholds:
+  - Entry (Mac mini M4 Pro 64GB): ~$984/year.
+  - Mid (Mac Studio M4 Max 128GB): ~$1,680/year.
+  - High (Mac Studio M3 Ultra 256GB): ~$2,808/year.
+  - Max (Mac Studio M3 Ultra 512GB, secondary market): ~$4,848/year.
+  Highlighted tier names with checkmarks or x-marks.
 
 ## Gate check transition
 

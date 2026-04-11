@@ -59,6 +59,17 @@ Cards are sortable by combined value. Visual indicator of relative contribution 
 
 ### Tier comparison table
 
+Hardware tiers with TCO data (Apple direct pricing, April 2026, amortized over 36 months + ~$15/mo power/ops):
+
+| Tier | Config | Upfront | Annual TCO | Capability ceiling |
+|------|--------|---------|-----------|-------------------|
+| Entry | Mac mini M4 Pro 64GB 2TB | ~$2,400 | ~$984 | Qwen3-Next-80B-A3B (tight). |
+| Mid | Mac Studio M4 Max 128GB 2TB | ~$4,500 | ~$1,680 | GPT-OSS-120B comfortable. |
+| High | Mac Studio M3 Ultra 256GB 2TB | $7,899 | ~$2,808 | Qwen3-235B-A22B comfortable. |
+| Max | Mac Studio M3 Ultra 512GB (secondary market) | ~$14,000 | ~$4,848 | Qwen3.5-397B / GLM-5.1 / MiniMax M2.7. |
+
+The tier comparison table in the aggregation view uses these values:
+
 | Tier | Annual TCO | Group value | Justified? | Clears capability floor? |
 |------|-----------|-------------|------------|-------------------------|
 
