@@ -22,11 +22,11 @@ Build and ship the complete decision SPA — from static scaffold through group 
 | DESIGN-003 | Principle Scorecard Worksheet | active |
 | DESIGN-004 | Capability Evaluation Worksheet | active |
 | DESIGN-005 | Group Aggregation View | active |
-| SPEC-001 | SPA Scaffold & Worksheet 1 (Risk) | draft |
-| SPEC-002 | Worksheet 2 (Principle) | draft |
-| SPEC-003 | Worksheet 3 (Capability Evaluation) | draft |
-| SPEC-004 | Group Aggregation View | draft |
-| SPEC-005 | GitHub Pages Deployment | draft |
+| SPEC-001 | SPA Scaffold & Risk Scorecard | ready |
+| SPEC-002 | Principle Scorecard | ready |
+| SPEC-003 | Capability Evaluation | ready |
+| SPEC-004 | Group Aggregation View | ready |
+| SPEC-005 | GitHub Pages Deployment | ready |
 
 ## Sequencing
 
