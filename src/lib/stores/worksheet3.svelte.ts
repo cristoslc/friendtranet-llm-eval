@@ -57,12 +57,12 @@ export async function loadW3() {
 }
 
 async function saveW3() {
-	await dbSet('worksheets', 'w3', {
+	await dbSet('worksheets', 'w3', JSON.parse(JSON.stringify({
 		selectedConversations: state.selectedConversations,
 		selectedTierIds: state.selectedTierIds,
 		evalResults: state.evalResults,
 		turnRatings: state.turnRatings
-	});
+	})));
 }
 
 export function toggleConversation(id: string) {

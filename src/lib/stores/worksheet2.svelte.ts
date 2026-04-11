@@ -41,7 +41,7 @@ export async function loadW2() {
 }
 
 export async function saveW2() {
-	await dbSet('worksheets', 'w2', { ...state });
+	await dbSet('worksheets', 'w2', JSON.parse(JSON.stringify(state)));
 }
 
 export function toggleCategory(id: string) {

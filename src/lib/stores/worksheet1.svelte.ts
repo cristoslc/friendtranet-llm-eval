@@ -40,11 +40,11 @@ export async function loadW1() {
 }
 
 export async function saveW1() {
-	await dbSet('worksheets', 'w1', {
+	await dbSet('worksheets', 'w1', JSON.parse(JSON.stringify({
 		responses: state.responses,
 		riskAversionRows: state.riskAversionRows,
 		riskAversionMultipliers: state.riskAversionMultipliers
-	});
+	})));
 }
 
 export function setThreatProbability(threatId: number, probabilityIndex: number) {
