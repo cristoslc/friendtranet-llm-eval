@@ -89,15 +89,19 @@
 	{@const w1 = getW1State()}
 
 	<div class="container-with-margin">
-		<main>
+		<aside class="title-panel">
 			<h1>Worksheet 1: Risk Scorecard</h1>
-			<p class="muted">
+			<p>
 				For each threat, rate how likely it is and how bad it would be if it happened. The
-				hardware mitigation slider shows how much local hardware protects you from this
-				threat — adjust if you disagree with the default.
-				{completedRowCount()} of {threats.length} threats assessed.
+				hardware mitigation slider shows how much local hardware protects you from this threat
+				— adjust if you disagree with the default.
 			</p>
+			<p>
+				<strong>{completedRowCount()}</strong> of {threats.length} threats assessed.
+			</p>
+		</aside>
 
+		<main>
 			{#each threats as threat (threat.id)}
 				{@const resp = w1.responses[threat.id]}
 				{@const loss = computeThreatLoss(threat.id)}

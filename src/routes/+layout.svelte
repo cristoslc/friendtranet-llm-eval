@@ -52,7 +52,9 @@
 	<title>Sovereignty Stack Decision</title>
 </svelte:head>
 
-<header style="background: var(--color-surface); border-bottom: 1px solid var(--color-border);">
+<header
+	style="position: sticky; top: 0; z-index: 20; background: var(--color-surface); border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow);"
+>
 	<div class="container" style="display: flex; align-items: center; gap: 1rem;">
 		<nav class="stepper" style="flex: 1;">
 			{#each steps as step}

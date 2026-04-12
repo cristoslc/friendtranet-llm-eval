@@ -210,8 +210,8 @@ async function design002() {
 	});
 	await waitMs(500);
 
-	const counterText = await page.$$eval('p.muted', (els) =>
-		els.find((e) => e.textContent?.includes('of 10'))?.textContent ?? ''
+	const counterText = await page.$$eval('p', (els) =>
+		els.find((e) => e.textContent?.includes('of 10 threats'))?.textContent ?? ''
 	);
 	assert(counterText.includes('1 of 10'), `D002: Counter shows "1 of 10 threats assessed" (got "${counterText.slice(0, 80)}")`);
 
