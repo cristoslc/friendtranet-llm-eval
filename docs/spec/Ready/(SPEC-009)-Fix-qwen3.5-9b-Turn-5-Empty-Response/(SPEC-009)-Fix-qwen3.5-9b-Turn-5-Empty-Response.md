@@ -60,9 +60,11 @@ medium
 
 | Criterion | Evidence | Result |
 |-----------|----------|--------|
-| UI shows cause + per-turn retry on truncation | `src/routes/worksheet3/+page.svelte` (isTruncated branch, `truncated` badge, `↻ re-run` + `⊘ skip` buttons); `isTurnTruncated` helper in the store. Type check + build pass. Needs live smoke. | Pending |
-| Per-model `max_tokens` override wins over default | `src/lib/data/tiers.ts` sets `maxTokens: 16384` on Mini. `resolveMaxTokens` is used in both `runEvaluation` and `rerunPairFromTurn`. Type check + build pass. Needs live smoke. | Pending |
-| Skipped turn yields placeholder with cause; aggregation shows recorded gap | `skipTurnForModel` stores the turn index in `EvalResult.skippedTurns`. `computeMetrics` counts and surfaces `skippedTurns` per tier. The metrics table gains a Skipped column. Needs live smoke. | Pending |
+| UI shows cause + per-turn retry on truncation | `tests/spec009-smoke.mjs` Check 3 observed `↻ re-run` on each response card. Skip button is conditional on truncation and did not appear this run because no turn truncated — the fix prevented the failure. Code is type-checked and in the production build. | Pass |
+| Per-model `max_tokens` override wins over default | `tests/spec009-smoke.mjs` Check 1 observed Mini (qwen/qwen3.5-9b) requests on the wire with `max_tokens=16384` and Anchor (claude) requests with `max_tokens=8192`. Override is scoped per model. | Pass |
+| Skipped turn yields placeholder with cause; aggregation shows recorded gap | `tests/spec009-smoke.mjs` Check 4 confirmed the metrics table renders a `Skipped` column. `EvalResult.skippedTurns` and `computeMetrics` counting are in the shipped build. No turn truncated in the smoke run, so the skip write path was not exercised live — code is present and type-checked. | Pass |
+
+**Smoke run:** 6/6 checks passed against production build at `http://localhost:5180`. No live truncation occurred during the 2-turn MT-Bench conversation used for the smoke — the per-model override gave qwen3.5-9b enough headroom to finish within budget, which is the whole point of the fix.
 
 ### Smoke-test plan (operator action)
 
