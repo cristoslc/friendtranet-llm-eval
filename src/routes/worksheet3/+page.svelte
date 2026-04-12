@@ -22,7 +22,7 @@
 		resetW3All,
 		resetW3Responses,
 		resetW3Ratings,
-		invalidatePair
+		rerunPairFromTurn
 	} from '$lib/stores/worksheet3.svelte';
 
 	function confirmReset(scope: 'all' | 'responses' | 'ratings') {
@@ -148,23 +148,23 @@
 	}
 
 	/**
-	 * Re-run a single (conversation × model) pair. Invalidates the cached
-	 * result, then kicks off evaluation with only that conversation selected
-	 * — the worker pool will notice all other pairs are still cached and
-	 * only re-evaluate the invalidated one.
+	 * Re-run a (conversation × model) pair starting from the turn the user
+	 * is currently rating. Turns before the current index keep their cached
+	 * responses and ratings; the model sees those preserved turns as
+	 * context when regenerating from the current turn forward. Only ratings
+	 * for the same model at turns >= current are dropped.
 	 */
 	async function rerunPair(convId: string, modelId: string) {
 		if (getW3State().evalProgress.running) return;
-		invalidatePair(convId, modelId);
-		// After invalidate, turnRatings for this conversation were cleared,
-		// so the rating UI will rebuild labelOrder with current effective
-		// model IDs on the next render. Re-run just this conversation.
 		const conv = bundle.conversations.find((c) => c.id === convId);
 		if (!conv) return;
+		const tier = modelTiers.find((t) => resolveModelId(t) === modelId || t.modelId === modelId);
+		if (!tier) return;
+
 		abortController = new AbortController();
 		try {
-			await runEvaluation([conv], (msg) => (evalStatus = msg), abortController.signal);
-			evalStatus = 'Re-run complete.';
+			await rerunPairFromTurn(conv, tier, ratingTurnIndex, abortController.signal);
+			evalStatus = `Re-run complete from turn ${ratingTurnIndex + 1}.`;
 		} catch (e) {
 			evalStatus = `Error: ${(e as Error).message}`;
 		}

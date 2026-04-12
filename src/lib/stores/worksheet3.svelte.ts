@@ -159,23 +159,166 @@ export function resetW3Ratings() {
 	saveW3();
 }
 
-/** Invalidate a single pair's cached eval result so it will be re-run
- * the next time the user triggers evaluation. Also clears any turn
- * ratings for that conversation since the labels referenced the old
- * responses.
+interface ConversationLike {
+	id: string;
+	turns: Array<{ role: string; content: string }>;
+}
+
+/**
+ * Re-run a (conversation × model) pair from a specific turn forward,
+ * preserving cached responses for earlier turns and the user's ratings
+ * for turns that aren't being regenerated.
  *
- * Returns the evaluation key that was invalidated, or null if none
- * existed. */
-export function invalidatePair(convId: string, modelId: string): string | null {
-	const key = getEvalKey(convId, modelId);
-	if (!(key in state.evalResults)) return null;
-	const { [key]: _removed, ...rest } = state.evalResults;
-	state.evalResults = rest;
-	// Also drop ratings for this conversation — they reference models
-	// whose responses may now differ.
-	state.turnRatings = state.turnRatings.filter((r) => r.conversationId !== convId);
-	saveW3();
-	return key;
+ * startTurn = 0 means a full re-run.
+ * startTurn = N replays turns [N..end] using the stored turn-[0..N-1]
+ * responses as context for the model, so the regenerated answers stay
+ * coherent with what the user already read and rated.
+ *
+ * Only ratings for turns >= startTurn on this specific modelId are
+ * dropped — prior ratings survive.
+ */
+export async function rerunPairFromTurn(
+	conv: ConversationLike,
+	tier: ModelTier,
+	startTurn: number,
+	signal?: AbortSignal
+): Promise<void> {
+	const apiKey = sessionStorage.getItem('openrouter-key');
+	if (!apiKey) throw new Error('No API key');
+	if (state.evalProgress.running) return;
+
+	const effectiveModelId = resolveModelId(tier);
+	const key = getEvalKey(conv.id, effectiveModelId);
+	const existing = state.evalResults[key];
+	const userTurns = conv.turns.filter((t) => t.role === 'user');
+
+	if (startTurn < 0 || startTurn >= userTurns.length) return;
+
+	// Preserve responses for turns before startTurn.
+	const preserved = existing?.responses.slice(0, startTurn) ?? [];
+
+	// Clear ratings for this (conversation, modelId) at turns >= startTurn.
+	state.turnRatings = state.turnRatings.map((r) => {
+		if (r.conversationId !== conv.id) return r;
+		if (r.turnIndex < startTurn) return r;
+		if (!(effectiveModelId in r.ratings)) return r;
+		const { [effectiveModelId]: _dropped, ...remainingRatings } = r.ratings;
+		return { ...r, ratings: remainingRatings, revealed: false };
+	});
+
+	// Rebuild message history from preserved context.
+	const messages: Array<{ role: string; content: string }> = [];
+	for (let i = 0; i < startTurn; i++) {
+		messages.push({ role: 'user', content: userTurns[i].content });
+		messages.push({ role: 'assistant', content: preserved[i] ?? '' });
+	}
+
+	// Initialize progress for this single-pair partial run.
+	const pairKey = `${conv.id}:${effectiveModelId}:rerun-from-${startTurn}`;
+	state.evalProgress = {
+		running: true,
+		total: 1,
+		done: 0,
+		active: [
+			{
+				pairKey,
+				convId: conv.id,
+				tierLabel: tier.label,
+				modelId: effectiveModelId,
+				currentTurn: startTurn,
+				currentTurnTotal: userTurns.length,
+				status: `Re-running from turn ${startTurn + 1}/${userTurns.length}`
+			}
+		],
+		errors: [],
+		current: '',
+		currentTurn: startTurn,
+		currentTurnTotal: userTurns.length,
+		lastMessage: `Re-running ${tier.label} from turn ${startTurn + 1}…`
+	};
+
+	const newResponses: string[] = [];
+
+	for (let turnIdx = startTurn; turnIdx < userTurns.length; turnIdx++) {
+		if (signal?.aborted) break;
+		const userTurn = userTurns[turnIdx];
+		state.evalProgress.active = state.evalProgress.active.map((p) =>
+			p.pairKey === pairKey
+				? { ...p, currentTurn: turnIdx + 1, status: `turn ${turnIdx + 1}/${userTurns.length}` }
+				: p
+		);
+		messages.push({ role: 'user', content: userTurn.content });
+
+		try {
+			const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					'Content-Type': 'application/json',
+					'HTTP-Referer': window.location.origin,
+					'X-Title': 'Sovereignty Stack Decision SPA'
+				},
+				body: JSON.stringify({
+					model: effectiveModelId,
+					messages: [...messages],
+					max_tokens: 8192
+				}),
+				signal
+			});
+
+			if (!resp.ok) {
+				const errBody = await resp.text();
+				const errMsg = `[${tier.label} re-run turn ${turnIdx + 1}] HTTP ${resp.status}: ${errBody.slice(0, 300)}`;
+				state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
+				newResponses.push(`[Error ${resp.status}: ${errBody.slice(0, 200)}]`);
+				messages.push({ role: 'assistant', content: newResponses[newResponses.length - 1] });
+				continue;
+			}
+
+			const data = await resp.json();
+			const choice = data.choices?.[0];
+			const content = choice?.message?.content ?? '';
+			const finishReason = choice?.finish_reason ?? 'unknown';
+
+			if (!content) {
+				newResponses.push(`[No response — finish_reason: ${finishReason}]`);
+				messages.push({ role: 'assistant', content: '' });
+			} else {
+				const suffix =
+					finishReason === 'length'
+						? '\n\n[⚠ Response truncated at max_tokens. Re-run this pair to get a full response.]'
+						: '';
+				newResponses.push(content + suffix);
+				messages.push({ role: 'assistant', content });
+			}
+		} catch (e) {
+			if (signal?.aborted) break;
+			const errMsg = `[${tier.label} re-run turn ${turnIdx + 1}] ${(e as Error).message}`;
+			state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
+			newResponses.push(`[Error: ${(e as Error).message}]`);
+			messages.push({ role: 'assistant', content: newResponses[newResponses.length - 1] });
+		}
+	}
+
+	if (!signal?.aborted) {
+		state.evalResults[key] = {
+			conversationId: conv.id,
+			modelId: effectiveModelId,
+			responses: [...preserved, ...newResponses],
+			cachedAt: new Date().toISOString()
+		};
+		state.evalProgress.done = 1;
+		saveW3();
+	}
+
+	state.evalProgress = {
+		...state.evalProgress,
+		running: false,
+		active: [],
+		lastMessage: signal?.aborted
+			? 'Cancelled.'
+			: `Re-run complete (turns ${startTurn + 1}–${userTurns.length}).`
+	};
 }
 
 export function toggleConversation(id: string) {
