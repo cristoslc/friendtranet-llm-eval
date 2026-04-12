@@ -13,3 +13,9 @@
 | SPEC-007 | Custom Conversation Prompt with Multi-Turn Chat | 2026-04-12 | — |
 | SPEC-008 | Fix Evaluation Progress Completion Presentation | 2026-04-12 | — |
 
+## Complete
+
+| Artifact | Title | Last Updated | Commit |
+|----------|-------|-------------|--------|
+| SPEC-009 | Fix qwen3.5-9b Turn 5 Empty Response | 2026-04-12 | aec47dc |
+
