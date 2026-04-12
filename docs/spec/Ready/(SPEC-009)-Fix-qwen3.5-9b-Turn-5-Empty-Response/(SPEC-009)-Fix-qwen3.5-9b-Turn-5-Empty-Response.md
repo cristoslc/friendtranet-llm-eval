@@ -58,10 +58,27 @@ medium
 
 ## Verification
 
-<!-- Populated when entering Needs Manual Test. -->
-
 | Criterion | Evidence | Result |
 |-----------|----------|--------|
+| UI shows cause + per-turn retry on truncation | `src/routes/worksheet3/+page.svelte` (isTruncated branch, `truncated` badge, `↻ re-run` + `⊘ skip` buttons); `isTurnTruncated` helper in the store. Type check + build pass. Needs live smoke. | Pending |
+| Per-model `max_tokens` override wins over default | `src/lib/data/tiers.ts` sets `maxTokens: 16384` on Mini. `resolveMaxTokens` is used in both `runEvaluation` and `rerunPairFromTurn`. Type check + build pass. Needs live smoke. | Pending |
+| Skipped turn yields placeholder with cause; aggregation shows recorded gap | `skipTurnForModel` stores the turn index in `EvalResult.skippedTurns`. `computeMetrics` counts and surfaces `skippedTurns` per tier. The metrics table gains a Skipped column. Needs live smoke. | Pending |
+
+### Smoke-test plan (operator action)
+
+1. Start the dev server: `npm run dev`.
+2. Open the SPA. Go to **Worksheet 3**. Paste an OpenRouter API key.
+3. Select conversation `wb-b54d18230c5` (or the previously failing one) and the Mini tier.
+4. Click **Start evaluation**. Watch the status.
+5. On the turn that used to fail, confirm one of:
+   - The turn now has visible content (override plus auto-retry worked).
+   - The turn is flagged in errors as `Empty response ... after 2 attempts [prompt=... completion=... reasoning=...]`. The instrumentation exposes the cause.
+6. Start **Rating**. On a truncated turn, confirm:
+   - The response card shows a **truncated** badge.
+   - Both **↻ re-run** and **⊘ skip** buttons appear.
+   - Clicking **skip** mutes the card and switches the badge to **skipped (truncation)**.
+   - **↶ un-skip** appears and restores the card.
+7. Scroll to the **metrics table**. Confirm the **Skipped** column shows the count for the Mini tier.
 
 ## Scope & Constraints
 
