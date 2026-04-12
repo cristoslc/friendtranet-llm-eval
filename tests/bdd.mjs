@@ -420,9 +420,22 @@ async function design004() {
 	assert(tierSection.includes('Large'), 'D004: Large tier listed');
 	assert(tierSection.includes('Anchor') && tierSection.includes('baseline'), 'D004: Anchor tier listed as baseline');
 
-	// Model IDs
-	assert(tierSection.includes('qwen/qwen3-30b-a3b'), 'D004: Mini model ID shown');
-	assert(tierSection.includes('anthropic/claude-opus-4-6'), 'D004: Anchor model ID shown');
+	// Model IDs now live in <input> value attributes, not textContent.
+	const modelIdValues = await page.evaluate(() => {
+		const h2s = [...document.querySelectorAll('h2')];
+		const h = h2s.find((x) => x.textContent?.includes('Model Tiers'));
+		const card = h?.closest('.card');
+		if (!card) return [];
+		return [...card.querySelectorAll('input[type="text"]')].map((el) => el.value);
+	});
+	assert(
+		modelIdValues.some((v) => v.toLowerCase().includes('qwen')),
+		'D004: At least one Qwen model ID shown'
+	);
+	assert(
+		modelIdValues.some((v) => v.includes('anthropic/claude-opus-4-6')),
+		'D004: Anchor model ID shown'
+	);
 
 	// Anchor checkbox disabled
 	const disabledCheckboxes = await page.evaluate(() => {

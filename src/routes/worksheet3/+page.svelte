@@ -16,7 +16,9 @@
 		setRating,
 		revealTurn,
 		computeMetrics,
-		personalMinimumTier
+		personalMinimumTier,
+		resolveModelId,
+		setModelOverride
 	} from '$lib/stores/worksheet3.svelte';
 	import bundleData from '$lib/data/curated-conversations.json';
 	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
@@ -204,15 +206,68 @@
 	<!-- Tier Selection -->
 	<div class="card">
 		<h2>Model Tiers to Test</h2>
-		<p class="muted">Select which tiers to include. Anchor tier is always included for baseline comparison.</p>
+		<p class="muted">
+			Select which tiers to include. Anchor tier is always included for baseline comparison.
+			You can override any model ID — useful when a tier's default isn't ZDR-compliant under
+			your OpenRouter settings.
+		</p>
 		{#each modelTiers as tier}
-			<label class="checkbox-card" class:selected={tier.isAnchor || w3.selectedTierIds.includes(tier.id)} style="margin-bottom: 0.5rem;">
-				<input type="checkbox" checked={tier.isAnchor || w3.selectedTierIds.includes(tier.id)} disabled={tier.isAnchor} onchange={() => toggleTier(tier.id)} />
-				<div>
-					<div style="font-weight: 500;">{tier.label}{tier.isAnchor ? ' (baseline)' : ''}</div>
-					<div class="muted" style="font-size: 0.8rem;">{tier.modelId}</div>
+			{@const checked = tier.isAnchor || w3.selectedTierIds.includes(tier.id)}
+			{@const currentId = resolveModelId(tier)}
+			{@const isOverridden = currentId !== tier.modelId}
+			<div
+				class="checkbox-card"
+				class:selected={checked}
+				style="margin-bottom: 0.5rem; flex-direction: column; align-items: stretch;"
+			>
+				<label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+					<input
+						type="checkbox"
+						{checked}
+						disabled={tier.isAnchor}
+						onchange={() => toggleTier(tier.id)}
+					/>
+					<div style="flex: 1; min-width: 0;">
+						<div style="font-weight: 500;">
+							{tier.label}{tier.isAnchor ? ' (baseline)' : ''}
+							{#if isOverridden}
+								<span class="badge warn">overridden</span>
+							{/if}
+						</div>
+						{#if tier.note}
+							<div class="muted" style="font-size: 0.75rem; margin-top: 0.25rem;">
+								{tier.note}
+							</div>
+						{/if}
+					</div>
+				</label>
+				<div
+					style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; margin-left: 1.75rem;"
+				>
+					<label class="muted" style="font-size: 0.7rem; white-space: nowrap;" for="model-{tier.id}">
+						Model ID:
+					</label>
+					<input
+						id="model-{tier.id}"
+						type="text"
+						value={currentId}
+						onchange={(e) => {
+							const v = (e.target as HTMLInputElement).value;
+							setModelOverride(tier.id, v === tier.modelId ? null : v);
+						}}
+						style="font-family: monospace; font-size: 0.75rem; flex: 1;"
+					/>
+					{#if isOverridden}
+						<button
+							class="secondary"
+							style="font-size: 0.7rem; padding: 0.2rem 0.5rem;"
+							onclick={() => setModelOverride(tier.id, null)}
+						>
+							reset
+						</button>
+					{/if}
 				</div>
-			</label>
+			</div>
 		{/each}
 	</div>
 

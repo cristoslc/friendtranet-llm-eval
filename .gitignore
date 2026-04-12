@@ -2,9 +2,16 @@
 .agents/session.json
 .agents/completion-state.json
 .swain-init
+# Agent platform runtimes — skill symlinks and local state
 .claude/skills/
 .crush/
 .goose/
+.gemini/
+.codex/
+.copilot/
+.continue/
+.aider/
+.cursor/
 .agents/skills/swain/
 .agents/skills/swain-*/
 node_modules/

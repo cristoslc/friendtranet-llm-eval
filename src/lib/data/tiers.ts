@@ -47,22 +47,53 @@ export interface ModelTier {
 	label: string;
 	modelId: string;
 	isAnchor: boolean;
+	/** Default-on when starting a fresh evaluation. Tiers whose ZDR
+	 * endpoints are often unavailable on OpenRouter default to off
+	 * so users aren't surprised by 404s. */
+	defaultSelected: boolean;
+	/** User-facing note about availability caveats. */
+	note?: string;
 }
 
 export const modelTiers: ModelTier[] = [
-	{ id: 'mini', label: 'Mini', modelId: 'qwen/qwen3-30b-a3b', isAnchor: false },
+	{
+		id: 'mini',
+		label: 'Mini',
+		modelId: 'qwen/qwen3.5-9b',
+		isAnchor: false,
+		defaultSelected: true,
+		note: '9B dense. Fits any tier. Qwen 3.5 generation (Mar 2026).'
+	},
 	{
 		id: 'small',
 		label: 'Small',
-		modelId: 'qwen/qwen3-next-80b-a3b-instruct',
-		isAnchor: false
+		modelId: 'qwen/qwen3.5-35b-a3b',
+		isAnchor: false,
+		defaultSelected: true,
+		note: '35B total / 3B active MoE. Fits Entry tier comfortably.'
 	},
-	{ id: 'medium', label: 'Medium', modelId: 'openai/gpt-oss-120b', isAnchor: false },
-	{ id: 'large', label: 'Large', modelId: 'qwen/qwen3-235b-a22b', isAnchor: false },
+	{
+		id: 'medium',
+		label: 'Medium',
+		modelId: 'openai/gpt-oss-120b',
+		isAnchor: false,
+		defaultSelected: true,
+		note: '120B dense. Fits Mid tier. Strong ZDR availability via OpenAI-gateway providers.'
+	},
+	{
+		id: 'large',
+		label: 'Large',
+		modelId: 'qwen/qwen3.5-122b-a10b',
+		isAnchor: false,
+		defaultSelected: true,
+		note: '122B total / 10B active MoE (Feb 2026). Drop-in replacement for qwen3-235b-a22b which frequently lacks ZDR endpoints. If this one also fails, try qwen/qwen3.5-397b-a17b or qwen/qwen3-235b-a22b-thinking-2507 via the override below.'
+	},
 	{
 		id: 'anchor',
 		label: 'Anchor',
 		modelId: 'anthropic/claude-opus-4-6',
-		isAnchor: true
+		isAnchor: true,
+		defaultSelected: true,
+		note: 'Frontier baseline. Anthropic has strong ZDR support.'
 	}
 ];

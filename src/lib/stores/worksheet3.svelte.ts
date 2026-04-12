@@ -33,6 +33,10 @@ export interface EvalProgress {
 export interface W3State {
 	selectedConversations: string[];
 	selectedTierIds: string[];
+	/** Per-tier model ID overrides. If a tier id is absent, the default
+	 * model ID from modelTiers[] is used. Lets the user swap
+	 * ZDR-unavailable models without touching code. */
+	modelOverrides: Record<string, string>;
 	evalResults: Record<string, EvalResult>; // key: `${convId}:${modelId}`
 	turnRatings: TurnRating[];
 	evalProgress: EvalProgress;
@@ -51,7 +55,8 @@ const DEFAULT_PROGRESS: EvalProgress = {
 
 const DEFAULT_STATE: W3State = {
 	selectedConversations: [],
-	selectedTierIds: modelTiers.filter((t) => !t.isAnchor).map((t) => t.id),
+	selectedTierIds: modelTiers.filter((t) => !t.isAnchor && t.defaultSelected).map((t) => t.id),
+	modelOverrides: {},
 	evalResults: {},
 	turnRatings: [],
 	evalProgress: { ...DEFAULT_PROGRESS }
@@ -87,6 +92,7 @@ function saveW3() {
 			plainify({
 				selectedConversations: state.selectedConversations,
 				selectedTierIds: state.selectedTierIds,
+				modelOverrides: state.modelOverrides,
 				evalResults: state.evalResults,
 				turnRatings: state.turnRatings
 			})
@@ -94,6 +100,20 @@ function saveW3() {
 	} catch {
 		// Silent — don't let persistence errors cascade through HMR forwarder.
 	}
+}
+
+/** Resolve the effective model ID for a tier, applying user overrides. */
+export function resolveModelId(tier: ModelTier): string {
+	return state.modelOverrides[tier.id] ?? tier.modelId;
+}
+
+export function setModelOverride(tierId: string, modelId: string | null) {
+	if (modelId && modelId.trim().length > 0) {
+		state.modelOverrides[tierId] = modelId.trim();
+	} else {
+		delete state.modelOverrides[tierId];
+	}
+	saveW3();
 }
 
 export function toggleConversation(id: string) {
@@ -166,13 +186,15 @@ export async function runEvaluation(
 
 	/** Process one (conversation × tier) pair — all turns run sequentially within. */
 	async function processPair(conv: typeof conversations[0], tier: ModelTier) {
-		const pairKey = `${conv.id}:${tier.modelId}`;
+		const effectiveModelId = resolveModelId(tier);
+		const pairKey = `${conv.id}:${effectiveModelId}`;
 		activePairs.add(pairKey);
 		state.evalProgress.current = [...activePairs].slice(-3).join(', ');
 
 		const userTurns = conv.turns.filter((t) => t.role === 'user');
 		const responses: string[] = [];
 		const messages: Array<{ role: string; content: string }> = [];
+		let pairAborted = false;
 
 		for (let turnIdx = 0; turnIdx < userTurns.length; turnIdx++) {
 			if (signal?.aborted) break;
@@ -193,7 +215,7 @@ export async function runEvaluation(
 						'X-Title': 'Sovereignty Stack Decision SPA'
 					},
 					body: JSON.stringify({
-						model: tier.modelId,
+						model: effectiveModelId,
 						messages: [...messages],
 						max_tokens: 2048
 					}),
@@ -202,10 +224,22 @@ export async function runEvaluation(
 
 				if (!resp.ok) {
 					const errBody = await resp.text();
-					const errMsg = `[${tier.label} / ${conv.id.slice(0, 14)} turn ${
-						turnIdx + 1
-					}] HTTP ${resp.status}: ${errBody.slice(0, 300)}`;
+					// Detect OpenRouter's "no ZDR endpoint available" 404 so we can
+					// skip remaining turns and give a single clear error per tier
+					// instead of N copies of the same message.
+					const isZdrUnavailable =
+						resp.status === 404 && errBody.includes('guardrail restrictions');
+					const prefix = `[${tier.label} / ${effectiveModelId}`;
+					const errMsg = isZdrUnavailable
+						? `${prefix}] Not available under your OpenRouter ZDR / data-policy settings. Try a different model ID or adjust settings at https://openrouter.ai/settings/privacy.`
+						: `${prefix} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] HTTP ${resp.status}: ${errBody.slice(0, 300)}`;
 					state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
+					if (isZdrUnavailable) {
+						// Abandon this entire pair — retrying other turns will just
+						// hit the same error.
+						pairAborted = true;
+						break;
+					}
 					responses.push(`[Error ${resp.status}: ${errBody.slice(0, 200)}]`);
 					messages.push({ role: 'assistant', content: responses[responses.length - 1] });
 					continue;
@@ -226,16 +260,19 @@ export async function runEvaluation(
 			}
 		}
 
-		if (!signal?.aborted) {
-			const key = getEvalKey(conv.id, tier.modelId);
+		if (!signal?.aborted && !pairAborted) {
+			const key = getEvalKey(conv.id, effectiveModelId);
 			state.evalResults[key] = {
 				conversationId: conv.id,
-				modelId: tier.modelId,
+				modelId: effectiveModelId,
 				responses,
 				cachedAt: new Date().toISOString()
 			};
 			state.evalProgress.done++;
 			saveW3();
+		} else if (pairAborted) {
+			// Still count it toward "done" so the progress bar doesn't stall.
+			state.evalProgress.done++;
 		}
 
 		activePairs.delete(pairKey);
