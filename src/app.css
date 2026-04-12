@@ -562,29 +562,117 @@ textarea {
  * edges of the form column, rounded with strong shadow to read as an
  * overlay rather than another section of the form.
  */
+/*
+ * Left-panel summary card — embedded in the title panel, not a sticky
+ * overlay on the form. Differs from the full-width sticky version by
+ * being narrower and vertical-first.
+ */
 .summary-card {
-	position: sticky;
-	bottom: 1rem;
-	z-index: 10;
 	background: var(--color-surface-alt);
 	border: 1px solid var(--color-border-strong);
 	border-top: 3px solid var(--color-primary);
 	border-radius: var(--radius);
-	padding: 1rem 1.5rem;
-	box-shadow: var(--shadow-strong);
-	/* Overflow the form column on both sides */
-	margin: 2rem -2.5rem 0 -2.5rem;
+	padding: 1rem 1.25rem;
+	box-shadow: var(--shadow);
+	margin-top: 1.5rem;
 }
 
-.container-with-margin .summary-card {
-	margin: 2rem -2rem 0 -2rem;
+.summary-card h3 {
+	font-size: 0.75rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--color-text-muted);
+	margin-bottom: 0.5rem;
 }
 
-@media (max-width: 1100px) {
-	.summary-card,
-	.container-with-margin .summary-card {
-		margin-left: 0;
-		margin-right: 0;
+.summary-card .big-value {
+	font-size: 1.5rem;
+	font-weight: 700;
+	line-height: 1.2;
+	margin-bottom: 0.5rem;
+}
+
+.summary-card .small-note {
+	font-size: 0.75rem;
+	color: var(--color-text-muted);
+}
+
+/*
+ * Sticky workflow footer — previous / progress / next.
+ * Contextual nav & orientation that stays visible as the form scrolls.
+ */
+.workflow-footer {
+	position: sticky;
+	bottom: 0;
+	z-index: 15;
+	background: var(--color-surface);
+	border-top: 1px solid var(--color-border);
+	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Inner nav biased to center 50% of screen. Buttons sit just outside
+   the progress indicator, not at the viewport edges — minimizes mouse
+   traversal and keeps workflow controls in the user's focus area. */
+.workflow-footer-inner {
+	max-width: 720px;
+	margin: 0 auto;
+	padding: 0.75rem 1.5rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1.5rem;
+}
+
+.workflow-footer-prev,
+.workflow-footer-next {
+	flex: 0 0 auto;
+}
+
+.workflow-footer-progress {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.35rem;
+	max-width: 260px;
+}
+
+.workflow-footer-progress-label {
+	font-size: 0.75rem;
+	color: var(--color-text-muted);
+}
+
+.workflow-footer-progress-bar {
+	width: 180px;
+	height: 4px;
+	background: var(--color-surface-alt);
+	border-radius: 2px;
+	overflow: hidden;
+}
+
+.workflow-footer-progress-fill {
+	height: 100%;
+	background: var(--color-primary);
+	border-radius: 2px;
+	transition: width 0.3s ease;
+}
+
+.workflow-footer button {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+
+@media (max-width: 640px) {
+	.workflow-footer-inner {
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+	.workflow-footer-progress {
+		order: -1;
+		max-width: 100%;
+		width: 100%;
 	}
 }
 

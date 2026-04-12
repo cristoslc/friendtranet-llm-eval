@@ -360,7 +360,9 @@ async function design003() {
 
 	// --- Output Summary ---
 	console.log('\n  Output Summary');
-	assert(compText.includes('Summary'), 'D003: Summary section renders');
+	// Summary content moved to left-panel summary-card (new design)
+	const hasSummaryCard = !!(await page.$('.summary-card'));
+	assert(hasSummaryCard, 'D003: Summary card renders in left panel');
 	assert(compText.includes('Topological sovereignty'), 'D003: Selected stance shown in summary');
 
 	// --- Gate Check ---
@@ -372,9 +374,9 @@ async function design003() {
 	const badges = await page.$$eval('.badge', (els) =>
 		els.map((e) => e.textContent ?? '')
 	);
-	const hasJustified = badges.some((b) => b.includes('Justified'));
-	const hasNotJustified = badges.some((b) => b.includes('Not justified'));
-	assert(hasJustified || hasNotJustified, 'D003: Tier justification badges render');
+	// Left-panel summary card uses ✓ / ✗ badges per tier
+	const hasBadges = badges.some((b) => b === '✓' || b === '✗' || b.includes('Justified'));
+	assert(hasBadges, 'D003: Tier justification badges render');
 }
 
 // ═══════════════════════════════════════════════════════════════════

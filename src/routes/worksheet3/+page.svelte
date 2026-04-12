@@ -19,6 +19,7 @@
 		personalMinimumTier
 	} from '$lib/stores/worksheet3.svelte';
 	import bundleData from '$lib/data/curated-conversations.json';
+	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
 
 	const bundle = bundleData as {
 		version: number;
@@ -49,6 +50,8 @@
 	let w1Total = $derived(computeTotalLoss());
 	let w2Total = $derived(computeAdjustedWtp());
 	let combined = $derived(w1Total + w2Total);
+	let metrics = $derived(computeMetrics());
+	let hasRatings = $derived(metrics.some((m) => m.adequacyRate > 0));
 
 	let filteredConversations = $derived(
 		categoryFilter === 'all'
@@ -128,26 +131,48 @@
 </script>
 
 {#if !isW3Loaded()}
-	<p>Loading...</p>
+	<div class="container"><p>Loading...</p></div>
 {:else}
 	{@const w3 = getW3State()}
 
-	<h1>Worksheet 3: Capability Evaluation</h1>
-	<p class="muted">
-		Blind-test local models against a frontier baseline to find your personal minimum adequate tier.
-	</p>
+	<div class="container-with-margin">
+		<aside class="title-panel">
+			<h1>Worksheet 3: Capability Evaluation</h1>
+			<p>
+				Blind-test local models against a frontier baseline to find your personal minimum
+				adequate tier.
+			</p>
 
-	{#if combined < 984}
-		<div class="card" style="margin-top: 1rem;">
-			<div class="decision-card skip">
-				<h2>Gate check: no tier economically justified</h2>
-				<p>
-					Your combined W1+W2 value is {formatDollar(combined)}/year, below the Entry tier threshold of {formatDollar(984)}/year.
-				</p>
-				<p class="muted">You can still explore capability evaluation, but the economic case isn't there.</p>
+			<div class="summary-card">
+				<h3>Selection</h3>
+				<div class="small-note">
+					<strong>{w3.selectedConversations.length}</strong> conversations selected
+				</div>
+				<div class="small-note">
+					<strong>
+						{modelTiers.filter((t) => w3.selectedTierIds.includes(t.id) || t.isAnchor).length}
+					</strong>
+					tiers to test (including anchor)
+				</div>
+
+				{#if combined < 984}
+					<h3 style="margin-top: 1rem;">Gate check</h3>
+					<span class="badge skip">Below threshold</span>
+					<p class="small-note" style="margin-top: 0.5rem;">
+						Combined W1+W2 ({formatDollar(combined)}/yr) is below the Entry tier
+						({formatDollar(984)}/yr). You can still explore, but the economics aren't there.
+					</p>
+				{:else}
+					<h3 style="margin-top: 1rem;">Gate check</h3>
+					<span class="badge go">Passed</span>
+					<p class="small-note" style="margin-top: 0.5rem;">
+						Combined W1+W2 {formatDollar(combined)}/yr justifies testing.
+					</p>
+				{/if}
 			</div>
-		</div>
-	{/if}
+		</aside>
+
+		<main>
 
 	<!-- API Key -->
 	<div class="card" style="margin-top: 1rem;">
@@ -372,8 +397,6 @@
 	{/if}
 
 	<!-- Metrics -->
-	{@const metrics = computeMetrics()}
-	{@const hasRatings = metrics.some((m) => m.adequacyRate > 0)}
 	{#if hasRatings}
 		<div class="card" style="margin-top: 1.5rem;">
 			<h2>Results</h2>
@@ -433,19 +456,49 @@
 		</div>
 	{/if}
 
-	<div class="nav-buttons">
-		<a href="/worksheet2"><button class="secondary">← Principle Scorecard</button></a>
-		<div style="display: flex; gap: 0.5rem;">
-			<button class="primary" onclick={() => {
+		</main>
+
+		<aside class="margin-panel">
+			<h4>About the evaluation</h4>
+			<p class="legend-detail">
+				The SPA replays each conversation's user turns through every tier you select. Only
+				user turns are sent — original assistant responses are discarded.
+			</p>
+			<p class="legend-detail" style="margin-top: 0.75rem;">
+				<strong>Blind rating:</strong> responses appear with randomized labels (A, B, C, D). You
+				rate each on a 4-point scale before model identities are revealed.
+			</p>
+			<p class="legend-detail" style="margin-top: 0.75rem;">
+				<strong>Minimum adequate tier:</strong> lowest tier with ≥80% adequacy rate, ≤10%
+				critical failure rate, and no critical failures in high-frequency tasks.
+			</p>
+			<p class="legend-detail" style="margin-top: 0.75rem;">
+				Your OpenRouter key stays in this browser tab only — cleared on close. Every API call
+				is cached by (conversation, model) pair so re-runs are free.
+			</p>
+		</aside>
+	</div>
+
+	<WorkflowFooter
+		prevHref="/worksheet2"
+		prevLabel="Principle Scorecard"
+		nextHref="/aggregation"
+		nextLabel="Group Aggregation"
+		progressLabel="Worksheet 3 of 3 — Capability Evaluation"
+		progressPct={100}
+	>
+		<button
+			class="primary"
+			style="margin-top: 0.35rem; font-size: 0.75rem; padding: 0.35rem 0.75rem;"
+			onclick={() => {
 				import('$lib/stores/export').then(async ({ generateExport, downloadExport }) => {
 					const name = prompt('Enter your display name for the export:') ?? 'Anonymous';
 					const data = await generateExport(name);
 					downloadExport(data);
 				});
-			}}>
-				Export My Results
-			</button>
-			<a href="/aggregation"><button class="secondary">Group Aggregation →</button></a>
-		</div>
-	</div>
+			}}
+		>
+			Export my results
+		</button>
+	</WorkflowFooter>
 {/if}

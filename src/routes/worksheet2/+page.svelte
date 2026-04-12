@@ -23,6 +23,7 @@
 	} from '$lib/stores/worksheet2.svelte';
 	import { computeTotalLoss } from '$lib/stores/worksheet1.svelte';
 	import { loadW1 } from '$lib/stores/worksheet1.svelte';
+	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
 
 	onMount(async () => {
 		await Promise.all([loadW1(), loadW2()]);
@@ -34,18 +35,52 @@
 </script>
 
 {#if !isW2Loaded()}
-	<p>Loading...</p>
+	<div class="container"><p>Loading...</p></div>
 {:else}
 	{@const w2 = getW2State()}
 	{@const adjustedWtp = computeAdjustedWtp()}
 	{@const w1Total = computeTotalLoss()}
 	{@const combinedTotal = w1Total + adjustedWtp}
 
-	<h1>Worksheet 2: Principle Scorecard</h1>
-	<p class="muted">
-		Even if the risk is low, what would you pay for local control?
-	</p>
+	<div class="container-with-margin">
+		<aside class="title-panel">
+			<h1>Worksheet 2: Principle Scorecard</h1>
+			<p>Even if the risk is low, what would you pay for local control?</p>
 
+			<div class="summary-card">
+				<h3>Your WTP</h3>
+				{#if w2.wtpAmount === 0 && w2.stance !== 'none'}
+					<p class="small-note" style="margin: 0;">Set your willingness-to-pay to see your estimate.</p>
+				{:else}
+					<div class="big-value">{formatDollar(adjustedWtp)}/yr</div>
+					<div class="small-note">
+						Raw {formatDollar(w2.wtpAmount)} — monthly ~{formatDollar(computeMonthlyWtp())}
+					</div>
+				{/if}
+
+				<h3 style="margin-top: 1rem;">Combined (W1 + W2)</h3>
+				<div style="font-size: 1.1rem; font-weight: 600;">{formatDollar(combinedTotal)}/yr</div>
+				<div class="small-note">Risk {formatDollar(w1Total)} + principle {formatDollar(adjustedWtp)}</div>
+
+				<h3 style="margin-top: 1rem;">Tier justification</h3>
+				{#each hardwareTiers as tier}
+					{@const justified = combinedTotal >= tier.annualTCO}
+					<div style="display: flex; justify-content: space-between; padding: 0.25rem 0; font-size: 0.75rem;">
+						<span>
+							{#if justified}
+								<span class="badge go" style="font-size: 0.65rem;">✓</span>
+							{:else}
+								<span class="badge skip" style="font-size: 0.65rem;">✗</span>
+							{/if}
+							{tier.label}
+						</span>
+						<span class="muted">{formatDollar(tier.annualTCO)}</span>
+					</div>
+				{/each}
+			</div>
+		</aside>
+
+		<main>
 	<!-- Step 1: Categories -->
 	<div class="card" style="margin-top: 1rem;">
 		<h2>Step 1: What content would you route locally?</h2>
@@ -177,63 +212,10 @@
 		</div>
 	{/if}
 
-	<!-- Output + Gate Check -->
+	<!-- Gate check message — kept in main column as the inline decision panel -->
 	<div class="card" style="margin-top: 1.5rem;">
-		<h2>Summary</h2>
-		<table>
-			<tbody>
-				<tr>
-					<td>Categories selected</td>
-					<td style="text-align: right; font-weight: 500;">{w2.selectedCategories.length}</td>
-				</tr>
-				<tr>
-					<td>Stance</td>
-					<td style="text-align: right; font-weight: 500;">
-						{stanceOptions.find((s) => s.id === w2.stance)?.label ?? '—'}
-					</td>
-				</tr>
-				<tr>
-					<td>Raw WTP</td>
-					<td style="text-align: right;">{formatDollar(w2.wtpAmount)}/yr</td>
-				</tr>
-				<tr>
-					<td>Adjusted WTP (after compromise)</td>
-					<td style="text-align: right; font-weight: 600;">{formatDollar(adjustedWtp)}/yr</td>
-				</tr>
-				<tr style="border-top: 2px solid var(--color-text);">
-					<td>W1 Risk value</td>
-					<td style="text-align: right;">{formatDollar(w1Total)}/yr</td>
-				</tr>
-				<tr>
-					<td><strong>Combined (Risk + Principle)</strong></td>
-					<td style="text-align: right; font-weight: 700; font-size: 1.1rem;">{formatDollar(combinedTotal)}/yr</td>
-				</tr>
-			</tbody>
-		</table>
-
-		<div style="margin-top: 1rem;">
-			<h3>Tier justification</h3>
-			{#each hardwareTiers as tier}
-				{@const justified = combinedTotal >= tier.annualTCO}
-				<div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--color-border);">
-					<span>
-						{#if justified}
-							<span class="badge go">Justified</span>
-						{:else}
-							<span class="badge skip">Not justified</span>
-						{/if}
-						{tier.label} — {tier.config}
-					</span>
-					<span class="muted">{formatDollar(tier.annualTCO)}/yr</span>
-				</div>
-			{/each}
-		</div>
-	</div>
-
-	<!-- Gate check -->
-	{@const justifiedTiers = hardwareTiers.filter((t) => combinedTotal >= t.annualTCO)}
-	<div class="card" style="margin-top: 1rem;">
-		{#if justifiedTiers.length > 0}
+		{#if hardwareTiers.some((t) => combinedTotal >= t.annualTCO)}
+			{@const justifiedTiers = hardwareTiers.filter((t) => combinedTotal >= t.annualTCO)}
 			<div class="decision-card go">
 				<h2>Tier{justifiedTiers.length > 1 ? 's' : ''} economically justified</h2>
 				<p>
@@ -246,16 +228,42 @@
 			<div class="decision-card skip">
 				<h2>No tier justified</h2>
 				<p>
-					Your combined value ({formatDollar(combinedTotal)}/year) doesn't reach the annual cost
-					of any hardware tier. The math says stay on cloud APIs.
+					Your combined value ({formatDollar(combinedTotal)}/year) doesn't reach the annual
+					cost of any hardware tier. The math says stay on cloud APIs.
 				</p>
-				<p class="muted">You can still explore Worksheet 3 if you're curious, but the economic case isn't there.</p>
+				<p class="muted">
+					You can still explore Worksheet 3 if you're curious, but the economic case isn't
+					there.
+				</p>
 			</div>
 		{/if}
 	</div>
+		</main>
 
-	<div class="nav-buttons">
-		<a href="/worksheet1"><button class="secondary">← Risk Scorecard</button></a>
-		<a href="/worksheet3"><button class="primary">Next: Capability Evaluation →</button></a>
+		<aside class="margin-panel">
+			<h4>Guidance</h4>
+			<p class="legend-detail">
+				This worksheet is about <em>values</em>, not <em>risk</em> — what would you pay for
+				local control independent of probability of harm?
+			</p>
+			<p class="legend-detail" style="margin-top: 0.75rem;">
+				The <strong>compromise tolerance</strong> step captures whether partial coverage is
+				enough for you. Local hardware can protect some content categories but not others; the
+				reduction encodes that.
+			</p>
+			<p class="legend-detail" style="margin-top: 0.75rem;">
+				<strong>Sanity check:</strong> divide your adjusted WTP by 12 and ask whether you'd pay
+				that monthly for a sovereignty service. If not, revise down — that's a real data point.
+			</p>
+		</aside>
 	</div>
+
+	<WorkflowFooter
+		prevHref="/worksheet1"
+		prevLabel="Risk Scorecard"
+		nextHref="/worksheet3"
+		nextLabel="Capability Evaluation"
+		progressLabel="Worksheet 2 of 3 — Principle Scorecard"
+		progressPct={66}
+	/>
 {/if}

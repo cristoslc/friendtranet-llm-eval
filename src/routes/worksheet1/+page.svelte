@@ -22,6 +22,7 @@
 		computeTotalLoss,
 		completedRowCount
 	} from '$lib/stores/worksheet1.svelte';
+	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
 
 	let showPremium = $state(false);
 
@@ -99,6 +100,46 @@
 			<p>
 				<strong>{completedRowCount()}</strong> of {threats.length} threats assessed.
 			</p>
+
+			<!-- Summary card lives in the left panel: globals/orientation -->
+			<div class="summary-card">
+				<h3>Your risk estimate</h3>
+				{#if completedRowCount() === 0}
+					<p class="small-note" style="margin: 0;">
+						Set probability and impact for at least one threat to see your estimate.
+					</p>
+				{:else}
+					<div class="big-value">{formatDollar(computeTotalLoss())}/year</div>
+					{#if computePremium() > 0}
+						<div class="small-note">
+							Base {formatDollar(computeBaseLoss())} + premium {formatDollar(
+								computePremium()
+							)}
+						</div>
+					{/if}
+
+					<h3 style="margin-top: 1rem;">vs. hardware cost</h3>
+					{#each hardwareTiers as tier}
+						{@const pct = Math.min(100, (computeTotalLoss() / tier.annualTCO) * 100)}
+						<div class="tier-bar">
+							<span class="tier-bar-label" style="width: 50px; font-size: 0.7rem;">
+								{tier.label}
+							</span>
+							<div class="tier-bar-track" style="height: 16px;">
+								<div
+									class="tier-bar-fill"
+									style="width: {pct}%; background: {pct >= 100
+										? 'var(--color-go)'
+										: 'var(--color-primary)'};"
+								></div>
+							</div>
+							<span class="tier-bar-amount" style="width: 60px; font-size: 0.7rem;">
+								{formatDollar(tier.annualTCO)}
+							</span>
+						</div>
+					{/each}
+				{/if}
+			</div>
 		</aside>
 
 		<main>
@@ -295,57 +336,6 @@
 				{/if}
 			</div>
 
-			<div class="summary-card">
-				{#if completedRowCount() === 0}
-					<p class="muted">
-						Set probability and impact for at least one threat to see your risk estimate.
-					</p>
-				{:else}
-					<div
-						style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;"
-					>
-						<div>
-							<div class="muted" style="font-size: 0.75rem;">
-								Annual risk-adjusted expected loss
-							</div>
-							<div style="font-size: 1.5rem; font-weight: 700;">
-								{formatDollar(computeTotalLoss())}/year
-							</div>
-							{#if computePremium() > 0}
-								<div class="muted" style="font-size: 0.75rem;">
-									Base: {formatDollar(computeBaseLoss())} + Premium: {formatDollar(
-										computePremium()
-									)}
-								</div>
-							{/if}
-						</div>
-						<div style="flex: 1; min-width: 300px;">
-							{#each hardwareTiers as tier}
-								{@const pct = Math.min(100, (computeTotalLoss() / tier.annualTCO) * 100)}
-								<div class="tier-bar">
-									<span class="tier-bar-label">{tier.label}</span>
-									<div class="tier-bar-track">
-										<div
-											class="tier-bar-fill"
-											style="width: {pct}%; background: {pct >= 100
-												? 'var(--color-go)'
-												: 'var(--color-primary)'};"
-										></div>
-									</div>
-									<span class="tier-bar-amount">{formatDollar(tier.annualTCO)}/yr</span>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-			</div>
-
-			<div class="nav-buttons">
-				<a href="/"><button class="secondary">← Home</button></a>
-				<a href="/worksheet2"
-					><button class="primary">Next: Principle Scorecard →</button></a
-				>
-			</div>
 		</main>
 
 		<!-- Margin legend panel -->
@@ -421,4 +411,13 @@
 			{/if}
 		</aside>
 	</div>
+
+	<WorkflowFooter
+		prevHref="/"
+		prevLabel="Home"
+		nextHref="/worksheet2"
+		nextLabel="Principle Scorecard"
+		progressLabel="Worksheet 1 of 3 — Risk Scorecard"
+		progressPct={33}
+	/>
 {/if}

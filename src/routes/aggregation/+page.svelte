@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { hardwareTiers } from '$lib/data/tiers';
 	import { validateImport, type ExportData } from '$lib/stores/export';
+	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
 
 	let members = $state<ExportData[]>([]);
 	let anonymize = $state(false);
@@ -173,8 +174,36 @@ th{background:#f5f5f5}.flag{padding:0.75rem;border-left:4px solid #d97706;backgr
 	}
 </script>
 
-<h1>Group Aggregation</h1>
-<p class="muted">Import exported worksheets from group members and compute the group decision.</p>
+<div class="container-with-margin">
+	<aside class="title-panel">
+		<h1>Group Aggregation</h1>
+		<p>Import exported worksheets from group members and compute the group decision.</p>
+
+		<div class="summary-card">
+			<h3>Imported</h3>
+			<div class="big-value">{members.length}</div>
+			<div class="small-note">member{members.length === 1 ? '' : 's'}</div>
+
+			{#if members.length > 0}
+				<h3 style="margin-top: 1rem;">Group total</h3>
+				<div style="font-size: 1.1rem; font-weight: 600;">
+					{formatDollar(groupCombinedTotal())}/yr
+				</div>
+				<div class="small-note">
+					Risk {formatDollar(groupRiskTotal())} + principle {formatDollar(
+						groupPrincipleTotal()
+					)}
+				</div>
+
+				{#if capabilityFloor()}
+					<h3 style="margin-top: 1rem;">Capability floor</h3>
+					<div class="small-note">{capabilityFloor()}</div>
+				{/if}
+			{/if}
+		</div>
+	</aside>
+
+	<main>
 
 <!-- Import -->
 <div class="card" style="margin-top: 1rem;">
@@ -375,11 +404,43 @@ th{background:#f5f5f5}.flag{padding:0.75rem;border-left:4px solid #d97706;backgr
 	<!-- Export -->
 	<div class="card" style="text-align: center;">
 		<button class="primary" onclick={exportReport}>Export Group Report</button>
-		<p class="muted" style="margin-top: 0.5rem;">Downloads a printable HTML report with all results.</p>
+		<p class="muted" style="margin-top: 0.5rem;">
+			Downloads a printable HTML report with all results.
+		</p>
 	</div>
 {/if}
 
-<div class="nav-buttons">
-	<a href="/worksheet3"><button class="secondary">← Capability Evaluation</button></a>
-	<a href="/"><button class="secondary">Home</button></a>
+	</main>
+
+	<aside class="margin-panel">
+		<h4>The three-dimensional check</h4>
+		<p class="legend-detail">
+			A purchase is justified only when <strong>economic</strong>, <strong>capability</strong>,
+			and <strong>social</strong> dimensions all pass.
+		</p>
+		<p class="legend-detail" style="margin-top: 0.75rem;">
+			The social dimension is a manual checkbox — the SPA can't evaluate whether hosting,
+			capital structure, and values alignment are resolved.
+		</p>
+		<p class="legend-detail" style="margin-top: 0.75rem;">
+			<strong>SKIP</strong> is rendered neutral, not red. Staying on cloud APIs is a valid
+			outcome — the SPA is a decision tool, not a persuasion tool.
+		</p>
+		<p class="legend-detail" style="margin-top: 0.75rem;">
+			<strong>Red flags:</strong> surfaced when a single member dominates, when risk dwarfs
+			principle (or vice versa), or when nobody cleared the mini tier. Meant to prompt group
+			discussion, not block the decision.
+		</p>
+	</aside>
 </div>
+
+<WorkflowFooter
+	prevHref="/worksheet3"
+	prevLabel="Capability Evaluation"
+	nextHref="/"
+	nextLabel="Home"
+	progressLabel={members.length === 0
+		? 'Import JSONs to begin'
+		: `${members.length} member${members.length === 1 ? '' : 's'} imported`}
+	progressPct={members.length > 0 ? 100 : 0}
+/>
