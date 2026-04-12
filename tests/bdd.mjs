@@ -609,30 +609,31 @@ async function design006() {
 	const convCount = await page.$$eval('.checkbox-grid .checkbox-card', (els) => els.length);
 	assert(convCount === 13, 'D006: Curated bundle loaded with 13 conversations');
 
-	// --- Category coverage ---
-	console.log('\n  Category Coverage');
+	// --- Complexity-based filter (replaced lossy category filter) ---
+	console.log('\n  Complexity Filter');
 
-	// Filter by household
-	await page.select('select', 'household');
+	await page.select('select', 'routine');
 	await waitMs(300);
-	const householdCount = await page.$$eval('.checkbox-grid .checkbox-card', (els) => els.length);
-	assert(householdCount === 4, 'D006: 4 household conversations');
+	const routineCount = await page.$$eval('.checkbox-grid .checkbox-card', (els) => els.length);
+	assert(routineCount > 0 && routineCount <= 13, `D006: Routine filter shows ${routineCount} cards`);
 
-	// Filter by creative
-	await page.select('select', 'creative');
+	await page.select('select', 'moderate');
 	await waitMs(300);
-	const creativeCount = await page.$$eval('.checkbox-grid .checkbox-card', (els) => els.length);
-	assert(creativeCount === 3, 'D006: 3 creative conversations');
+	const moderateCount = await page.$$eval('.checkbox-grid .checkbox-card', (els) => els.length);
+	assert(moderateCount > 0, `D006: Moderate filter shows ${moderateCount} cards`);
 
-	// Filter by professional
-	await page.select('select', 'professional');
+	await page.select('select', 'hard');
 	await waitMs(300);
-	const professionalCount = await page.$$eval('.checkbox-grid .checkbox-card', (els) => els.length);
-	assert(professionalCount === 3, 'D006: 3 professional conversations');
+	const hardCount = await page.$$eval('.checkbox-grid .checkbox-card', (els) => els.length);
+	assert(hardCount > 0, `D006: Hard filter shows ${hardCount} cards`);
 
 	// Reset filter
 	await page.select('select', 'all');
 	await waitMs(300);
+	assert(
+		routineCount + moderateCount + hardCount === 13,
+		`D006: All complexities sum to 13 (got ${routineCount + moderateCount + hardCount})`
+	);
 
 	// --- Complexity distribution ---
 	console.log('\n  Complexity & Metadata');

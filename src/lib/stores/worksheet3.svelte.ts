@@ -19,20 +19,42 @@ export interface TurnRating {
 	revealed: boolean;
 }
 
+export interface EvalProgress {
+	running: boolean;
+	current: string;
+	total: number;
+	done: number;
+	currentTurn: number;
+	currentTurnTotal: number;
+	lastMessage: string;
+	errors: string[];
+}
+
 export interface W3State {
 	selectedConversations: string[];
 	selectedTierIds: string[];
 	evalResults: Record<string, EvalResult>; // key: `${convId}:${modelId}`
 	turnRatings: TurnRating[];
-	evalProgress: { running: boolean; current: string; total: number; done: number };
+	evalProgress: EvalProgress;
 }
+
+const DEFAULT_PROGRESS: EvalProgress = {
+	running: false,
+	current: '',
+	total: 0,
+	done: 0,
+	currentTurn: 0,
+	currentTurnTotal: 0,
+	lastMessage: '',
+	errors: []
+};
 
 const DEFAULT_STATE: W3State = {
 	selectedConversations: [],
 	selectedTierIds: modelTiers.filter((t) => !t.isAnchor).map((t) => t.id),
 	evalResults: {},
 	turnRatings: [],
-	evalProgress: { running: false, current: '', total: 0, done: 0 }
+	evalProgress: { ...DEFAULT_PROGRESS }
 };
 
 let state = $state<W3State>({ ...DEFAULT_STATE });
@@ -128,20 +150,36 @@ export async function runEvaluation(
 		}
 	}
 
-	state.evalProgress = { running: true, current: '', total: pairs.length, done: 0 };
+	state.evalProgress = {
+		running: true,
+		current: '',
+		total: pairs.length,
+		done: 0,
+		currentTurn: 0,
+		currentTurnTotal: 0,
+		lastMessage: 'Starting…',
+		errors: []
+	};
 
-	for (const { conv, tier } of pairs) {
-		if (signal?.aborted) break;
+	const CONCURRENCY = 4;
+	const activePairs = new Set<string>();
 
-		state.evalProgress.current = `${conv.id} × ${tier.label}`;
-		onProgress(state.evalProgress.current);
+	/** Process one (conversation × tier) pair — all turns run sequentially within. */
+	async function processPair(conv: typeof conversations[0], tier: ModelTier) {
+		const pairKey = `${conv.id}:${tier.modelId}`;
+		activePairs.add(pairKey);
+		state.evalProgress.current = [...activePairs].slice(-3).join(', ');
 
 		const userTurns = conv.turns.filter((t) => t.role === 'user');
 		const responses: string[] = [];
 		const messages: Array<{ role: string; content: string }> = [];
 
-		for (const userTurn of userTurns) {
+		for (let turnIdx = 0; turnIdx < userTurns.length; turnIdx++) {
 			if (signal?.aborted) break;
+			const userTurn = userTurns[turnIdx];
+			state.evalProgress.lastMessage = `${tier.label} (${conv.id.slice(0, 14)}): turn ${
+				turnIdx + 1
+			}/${userTurns.length}…`;
 
 			messages.push({ role: 'user', content: userTurn.content });
 
@@ -163,8 +201,12 @@ export async function runEvaluation(
 				});
 
 				if (!resp.ok) {
-					const err = await resp.text();
-					responses.push(`[Error ${resp.status}: ${err.slice(0, 200)}]`);
+					const errBody = await resp.text();
+					const errMsg = `[${tier.label} / ${conv.id.slice(0, 14)} turn ${
+						turnIdx + 1
+					}] HTTP ${resp.status}: ${errBody.slice(0, 300)}`;
+					state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
+					responses.push(`[Error ${resp.status}: ${errBody.slice(0, 200)}]`);
 					messages.push({ role: 'assistant', content: responses[responses.length - 1] });
 					continue;
 				}
@@ -175,6 +217,10 @@ export async function runEvaluation(
 				messages.push({ role: 'assistant', content });
 			} catch (e) {
 				if (signal?.aborted) break;
+				const errMsg = `[${tier.label} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] ${
+					(e as Error).message
+				}`;
+				state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
 				responses.push(`[Error: ${(e as Error).message}]`);
 				messages.push({ role: 'assistant', content: responses[responses.length - 1] });
 			}
@@ -191,9 +237,35 @@ export async function runEvaluation(
 			state.evalProgress.done++;
 			saveW3();
 		}
+
+		activePairs.delete(pairKey);
+		state.evalProgress.current = [...activePairs].slice(-3).join(', ') || '…';
 	}
 
-	state.evalProgress = { running: false, current: '', total: 0, done: 0 };
+	// Worker pool: CONCURRENCY workers pulling pairs off a shared queue.
+	const queue = [...pairs];
+	onProgress(`Running up to ${CONCURRENCY} pairs in parallel…`);
+
+	async function worker() {
+		while (queue.length > 0 && !signal?.aborted) {
+			const next = queue.shift();
+			if (!next) break;
+			await processPair(next.conv, next.tier);
+		}
+	}
+
+	await Promise.all(
+		Array.from({ length: Math.min(CONCURRENCY, pairs.length) }, () => worker())
+	);
+
+	state.evalProgress = {
+		...state.evalProgress,
+		running: false,
+		current: '',
+		currentTurn: 0,
+		currentTurnTotal: 0,
+		lastMessage: signal?.aborted ? 'Cancelled.' : 'Evaluation complete.'
+	};
 }
 
 // Blind rating helpers

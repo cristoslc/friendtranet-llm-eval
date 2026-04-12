@@ -150,7 +150,10 @@
 				{@const mitigation =
 					resp?.hwMitigation !== undefined ? resp.hwMitigation : threat.hwPrevents}
 				<div class="card">
-					<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+					<div
+						class="sticky-head"
+						style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;"
+					>
 						<div style="flex: 1;">
 							<h3 style="margin-bottom: 0.25rem;">
 								{threat.id}. {threat.shortLabel}

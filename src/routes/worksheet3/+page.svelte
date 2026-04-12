@@ -56,7 +56,7 @@
 	let filteredConversations = $derived(
 		categoryFilter === 'all'
 			? bundle.conversations
-			: bundle.conversations.filter((c) => c.category === categoryFilter)
+			: bundle.conversations.filter((c) => c.complexity === categoryFilter)
 	);
 
 	onMount(async () => {
@@ -226,23 +226,38 @@
 
 		<div style="margin: 0.75rem 0;">
 			<select bind:value={categoryFilter}>
-				<option value="all">All categories</option>
-				{#each [...new Set(bundle.conversations.map((c) => c.category))] as cat}
-					<option value={cat}>{categoryLabel(cat)}</option>
-				{/each}
+				<option value="all">All conversations</option>
+				<option value="routine">Routine complexity only</option>
+				<option value="moderate">Moderate complexity only</option>
+				<option value="hard">Hard complexity only</option>
 			</select>
+			<span class="muted" style="font-size: 0.75rem; margin-left: 0.5rem;">
+				Conversations are from WildBench and MT-Bench. Scan the content to pick ones close to
+				your real use cases.
+			</span>
 		</div>
 
 		<div class="checkbox-grid">
 			{#each filteredConversations as conv}
 				{@const selected = w3.selectedConversations.includes(conv.id)}
-				<label class="checkbox-card" class:selected>
-					<input type="checkbox" checked={selected} onchange={() => toggleConversation(conv.id)} />
-					<div style="font-size: 0.8rem;">
-						<div style="font-weight: 500;">{conv.summary.slice(0, 80)}{conv.summary.length > 80 ? '...' : ''}</div>
-						<div class="muted">
-							<span class="badge {conv.complexity === 'hard' ? 'warn' : conv.complexity === 'routine' ? 'go' : 'skip'}">{conv.complexity}</span>
-							{conv.metadata.turnCount} turns · {categoryLabel(conv.category)}
+				{@const firstUserTurn = conv.turns.find((t) => t.role === 'user')?.content ?? ''}
+				<label class="checkbox-card conversation-card" class:selected>
+					<input
+						type="checkbox"
+						checked={selected}
+						onchange={() => toggleConversation(conv.id)}
+					/>
+					<div style="font-size: 0.8rem; min-width: 0; flex: 1;">
+						<div class="conversation-preview">{firstUserTurn}</div>
+						<div
+							class="muted"
+							style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;"
+						>
+							<span class="badge {conv.complexity === 'hard' ? 'warn' : conv.complexity === 'routine' ? 'go' : 'skip'}">
+								{conv.complexity}
+							</span>
+							<span>{conv.metadata.turnCount} turns</span>
+							<span>~{conv.metadata.estimatedTokens.toLocaleString()} tokens</span>
 							{#if isEvalCached(conv.id, modelTiers[0].modelId)}
 								<span class="badge go">cached</span>
 							{/if}
@@ -268,12 +283,40 @@
 			</p>
 			{#if w3.evalProgress.running}
 				<div style="margin: 0.75rem 0;">
-					<div style="height: 8px; background: var(--color-border); border-radius: 4px; overflow: hidden;">
-						<div style="height: 100%; width: {w3.evalProgress.total > 0 ? (w3.evalProgress.done / w3.evalProgress.total) * 100 : 0}%; background: var(--color-primary); transition: width 0.3s;"></div>
+					<div
+						style="height: 8px; background: var(--color-border); border-radius: 4px; overflow: hidden;"
+					>
+						<div
+							style="height: 100%; width: {w3.evalProgress.total > 0
+								? (w3.evalProgress.done / w3.evalProgress.total) * 100
+								: 0}%; background: var(--color-primary); transition: width 0.3s;"
+						></div>
 					</div>
-					<p class="muted" style="margin-top: 0.5rem;">{w3.evalProgress.done}/{w3.evalProgress.total}: {evalStatus}</p>
+					<p class="muted" style="margin-top: 0.5rem; font-size: 0.85rem;">
+						<strong>{w3.evalProgress.done}/{w3.evalProgress.total}</strong>
+						pairs complete &middot; {w3.evalProgress.current}
+						{#if w3.evalProgress.currentTurnTotal > 0}
+							&middot; turn {w3.evalProgress.currentTurn}/{w3.evalProgress.currentTurnTotal}
+						{/if}
+					</p>
+					<p class="muted" style="margin-top: 0.25rem; font-size: 0.75rem; font-style: italic;">
+						{w3.evalProgress.lastMessage}
+					</p>
 				</div>
 				<button class="secondary" onclick={cancelEvaluation}>Cancel</button>
+				{#if w3.evalProgress.errors.length > 0}
+					<div
+						class="flag-card"
+						style="margin-top: 0.75rem; max-height: 180px; overflow-y: auto;"
+					>
+						<strong>{w3.evalProgress.errors.length} error{w3.evalProgress.errors.length === 1 ? '' : 's'} so far:</strong>
+						{#each w3.evalProgress.errors.slice(-5) as err}
+							<div style="font-size: 0.75rem; margin-top: 0.25rem; font-family: monospace;">
+								{err}
+							</div>
+						{/each}
+					</div>
+				{/if}
 			{:else}
 				{#if uncachedPairs.length > 0}
 					<button class="primary" onclick={startEvaluation} style="margin-top: 0.5rem;">
@@ -287,6 +330,22 @@
 				{/if}
 				{#if evalStatus}
 					<p class="muted" style="margin-top: 0.5rem;">{evalStatus}</p>
+				{/if}
+				{#if w3.evalProgress.errors.length > 0}
+					<div class="flag-card" style="margin-top: 0.75rem;">
+						<strong>
+							{w3.evalProgress.errors.length} error{w3.evalProgress.errors.length === 1
+								? ''
+								: 's'} occurred during evaluation:
+						</strong>
+						<div style="max-height: 200px; overflow-y: auto; margin-top: 0.5rem;">
+							{#each w3.evalProgress.errors as err}
+								<div style="font-size: 0.75rem; margin-top: 0.25rem; font-family: monospace;">
+									{err}
+								</div>
+							{/each}
+						</div>
+					</div>
 				{/if}
 			{/if}
 		</div>

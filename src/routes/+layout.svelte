@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { unsupportedReason } from '$lib/browser-guard';
 	let { children } = $props();
 
 	const steps = [
@@ -14,8 +15,10 @@
 
 	type Theme = 'system' | 'light' | 'dark';
 	let theme = $state<Theme>('system');
+	let browserBlock = $state<string | null>(null);
 
 	onMount(() => {
+		browserBlock = unsupportedReason();
 		const saved = localStorage.getItem('theme') as Theme | null;
 		if (saved === 'light' || saved === 'dark' || saved === 'system') {
 			theme = saved;
@@ -68,5 +71,18 @@
 </header>
 
 <main style="padding-top: 1.5rem; padding-bottom: 4rem;">
-	{@render children()}
+	{#if browserBlock}
+		<div class="container" style="max-width: 600px; margin-top: 4rem;">
+			<div class="card" style="text-align: center; padding: 2.5rem;">
+				<h1 style="margin-bottom: 1rem;">Browser not supported</h1>
+				<p style="margin-bottom: 1rem;">{browserBlock}</p>
+				<p class="muted" style="font-size: 0.85rem;">
+					This is a temporary restriction while we resolve compatibility issues in other
+					engines.
+				</p>
+			</div>
+		</div>
+	{:else}
+		{@render children()}
+	{/if}
 </main>

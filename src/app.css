@@ -247,6 +247,29 @@ body {
 	transition: background 0.2s, border-color 0.2s;
 }
 
+/*
+ * Sticky card header — when a card is taller than the viewport, the
+ * title/description sticks to the top of the card's scroll region so
+ * the user always knows which question they're editing.
+ * Pattern: add .sticky-head to the top block inside a .card.
+ */
+.sticky-head {
+	position: sticky;
+	top: 4rem;
+	z-index: 2;
+	background: var(--color-surface);
+	margin: -1.5rem -1.5rem 0.5rem -1.5rem;
+	padding: 1rem 1.5rem 0.75rem 1.5rem;
+	border-bottom: 1px solid var(--color-border);
+	border-radius: var(--radius) var(--radius) 0 0;
+}
+
+@media (max-height: 800px) {
+	.sticky-head {
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+	}
+}
+
 .card + .card {
 	margin-top: 1rem;
 }
@@ -494,6 +517,26 @@ textarea {
 
 .checkbox-card input {
 	margin-top: 0.2rem;
+}
+
+.conversation-card {
+	align-items: flex-start;
+}
+
+.conversation-preview {
+	/* Show a larger excerpt of the first user turn so the user can judge
+	   relevance directly from the card, instead of relying on lossy
+	   category tags. Clamp to 8 lines with ellipsis. */
+	display: -webkit-box;
+	-webkit-line-clamp: 8;
+	-webkit-box-orient: vertical;
+	line-clamp: 8;
+	overflow: hidden;
+	font-size: 0.8rem;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	word-break: break-word;
+	color: var(--color-text);
 }
 
 .radio-group {
