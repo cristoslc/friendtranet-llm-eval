@@ -202,37 +202,53 @@ function seededShuffle(arr: string[], seed: string): string[] {
 	return copy;
 }
 
-export function getOrCreateTurnRating(convId: string, turnIndex: number): TurnRating {
-	let existing = state.turnRatings.find(
-		(r) => r.conversationId === convId && r.turnIndex === turnIndex
+export function getTurnRating(convId: string, turnIndex: number): TurnRating | null {
+	return (
+		state.turnRatings.find(
+			(r) => r.conversationId === convId && r.turnIndex === turnIndex
+		) ?? null
 	);
+}
+
+function buildTurnRating(convId: string, turnIndex: number): TurnRating {
+	const allTiers = modelTiers.filter(
+		(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
+	);
+	const modelIds = allTiers.map((t) => t.modelId);
+	const seed = `${convId}-${turnIndex}`;
+	return {
+		conversationId: convId,
+		turnIndex,
+		ratings: {},
+		tags: {},
+		labelOrder: seededShuffle(modelIds, seed),
+		revealed: false
+	};
+}
+
+export function ensureTurnRating(convId: string, turnIndex: number): TurnRating {
+	let existing = getTurnRating(convId, turnIndex);
 	if (!existing) {
-		const allTiers = modelTiers.filter(
-			(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
-		);
-		const modelIds = allTiers.map((t) => t.modelId);
-		const seed = `${convId}-${turnIndex}`;
-		existing = {
-			conversationId: convId,
-			turnIndex,
-			ratings: {},
-			tags: {},
-			labelOrder: seededShuffle(modelIds, seed),
-			revealed: false
-		};
+		existing = buildTurnRating(convId, turnIndex);
 		state.turnRatings = [...state.turnRatings, existing];
+		saveW3();
 	}
 	return existing;
 }
 
+/** Pure read — safe for template expressions. Returns existing or a built placeholder. Does NOT persist. */
+export function getOrCreateTurnRating(convId: string, turnIndex: number): TurnRating {
+	return getTurnRating(convId, turnIndex) ?? buildTurnRating(convId, turnIndex);
+}
+
 export function setRating(convId: string, turnIndex: number, modelId: string, score: number) {
-	const rating = getOrCreateTurnRating(convId, turnIndex);
+	const rating = ensureTurnRating(convId, turnIndex);
 	rating.ratings[modelId] = score;
 	saveW3();
 }
 
 export function revealTurn(convId: string, turnIndex: number) {
-	const rating = getOrCreateTurnRating(convId, turnIndex);
+	const rating = ensureTurnRating(convId, turnIndex);
 	rating.revealed = true;
 	saveW3();
 }
