@@ -515,30 +515,34 @@ textarea {
 	color: var(--color-on-primary);
 }
 
+/*
+ * Summary card is a separate surface from the form. It floats above the
+ * form content: different background tint, overflows both left and right
+ * edges of the form column, rounded with strong shadow to read as an
+ * overlay rather than another section of the form.
+ */
 .summary-card {
 	position: sticky;
 	bottom: 1rem;
 	z-index: 10;
-	background: var(--color-surface);
-	border: 1px solid var(--color-border);
-	border-bottom-color: var(--color-primary);
-	border-bottom-width: 3px;
+	background: var(--color-surface-alt);
+	border: 1px solid var(--color-border-strong);
+	border-top: 3px solid var(--color-primary);
 	border-radius: var(--radius);
-	padding: 1rem 1.25rem;
+	padding: 1rem 1.5rem;
 	box-shadow: var(--shadow-strong);
-	/* Overflow slightly beyond the form column on the right */
-	margin-right: -2.5rem;
-	margin-top: 2rem;
+	/* Overflow the form column on both sides */
+	margin: 2rem -2.5rem 0 -2.5rem;
 }
 
-/* In the margin layout, keep summary-card within the main column */
 .container-with-margin .summary-card {
-	margin-right: -2rem;
+	margin: 2rem -2rem 0 -2rem;
 }
 
 @media (max-width: 1100px) {
 	.summary-card,
 	.container-with-margin .summary-card {
+		margin-left: 0;
 		margin-right: 0;
 	}
 }
@@ -605,18 +609,34 @@ th {
 	border-color: var(--color-primary);
 }
 
-/* Slider with tick marks for probability/impact scales */
+/* Slider with tick marks for probability/impact scales.
+   Slider track and label track both inset by --tick-inset so the
+   edge labels (which overflow half their text-width beyond their
+   stop position) don't collide with the card edge or margin panel. */
 .tick-slider {
+	--tick-inset: 2.5rem;
 	position: relative;
 	padding: 0.5rem 0 1.5rem 0;
 }
 
+.tick-slider input[type='range'] {
+	width: calc(100% - var(--tick-inset) * 2);
+	margin-left: var(--tick-inset);
+	margin-right: var(--tick-inset);
+}
+
 .tick-slider .tick-labels {
-	display: flex;
-	justify-content: space-between;
-	margin-top: 0.25rem;
+	position: relative;
+	height: 1rem;
+	margin: 0.35rem var(--tick-inset) 0 var(--tick-inset);
 	font-size: 0.7rem;
 	color: var(--color-text-muted);
+}
+
+.tick-slider .tick-labels span {
+	position: absolute;
+	transform: translateX(-50%);
+	white-space: nowrap;
 }
 
 .tick-slider .current-label {

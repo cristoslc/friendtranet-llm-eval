@@ -41,6 +41,18 @@
 		return '$' + Math.round(n).toLocaleString();
 	}
 
+	/** Calculate left-percent for a tick label at position index over count positions. */
+	function tickLeft(index: number, count: number): string {
+		if (count <= 1) return '50%';
+		return `${(index / (count - 1)) * 100}%`;
+	}
+
+	const probLabels = ['—', 'Never', 'V.rare', 'Rare', 'Occasional', 'Common', 'Frequent'];
+	const mitLabels = ['0%', '25%', '50%', '75%', '100%'];
+	function impactLabels(scaleLevels: Array<{ label: string }>): string[] {
+		return ['—', ...scaleLevels.map((l) => l.label.split(' ')[0])];
+	}
+
 	// Slider → probability index: range 0-5 maps to 6 anchors
 	function handleProbSlider(threatId: number, e: Event) {
 		const idx = parseInt((e.target as HTMLInputElement).value);
@@ -140,13 +152,9 @@
 							aria-label="Probability for {threat.shortLabel}"
 						/>
 						<div class="tick-labels">
-							<span>—</span>
-							<span>Never</span>
-							<span>V.rare</span>
-							<span>Rare</span>
-							<span>Occasional</span>
-							<span>Common</span>
-							<span>Frequent</span>
+							{#each probLabels as lbl, i}
+								<span style="left: {tickLeft(i, probLabels.length)};">{lbl}</span>
+							{/each}
 						</div>
 					</div>
 
@@ -183,9 +191,10 @@
 								aria-label="{scale.name} impact for {threat.shortLabel}"
 							/>
 							<div class="tick-labels">
-								<span>—</span>
-								{#each scale.levels as lvl}
-									<span>{lvl.label.split(' ')[0]}</span>
+								{#each impactLabels(scale.levels) as lbl, i (i)}
+									<span
+										style="left: {tickLeft(i, scale.levels.length + 1)};">{lbl}</span
+									>
 								{/each}
 							</div>
 						</div>
@@ -222,11 +231,9 @@
 							aria-label="Hardware mitigation for {threat.shortLabel}"
 						/>
 						<div class="tick-labels">
-							<span>0%</span>
-							<span>25%</span>
-							<span>50%</span>
-							<span>75%</span>
-							<span>100%</span>
+							{#each mitLabels as lbl, i}
+								<span style="left: {tickLeft(i, mitLabels.length)};">{lbl}</span>
+							{/each}
 						</div>
 					</div>
 				</div>
@@ -260,9 +267,9 @@
 										{threat.shortLabel} ({formatDollar(loss)})
 									</span>
 									{#if isSelected}
-										<label class="muted" style="font-size: 0.75rem;">
+										<span class="muted" style="font-size: 0.75rem;">
 											{w1.riskAversionMultipliers[threat.id] ?? 1}x
-										</label>
+										</span>
 										<input
 											type="range"
 											min="1"
