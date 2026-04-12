@@ -470,7 +470,9 @@
 						{@const evalResult = w3.evalResults[evalKey]}
 						{@const response = evalResult?.responses[ratingTurnIndex] ?? '[No response available]'}
 						{@const currentRating = turnRating.ratings[modelId]}
-						{@const tierInfo = modelTiers.find((t) => t.modelId === modelId)}
+						{@const tierInfo = modelTiers.find(
+							(t) => resolveModelId(t) === modelId || t.modelId === modelId
+						)}
 						<div class="card" style="margin-bottom: 0.75rem; border-left: 4px solid var(--color-primary);">
 							<div style="display: flex; justify-content: space-between; align-items: flex-start;">
 								<h3>

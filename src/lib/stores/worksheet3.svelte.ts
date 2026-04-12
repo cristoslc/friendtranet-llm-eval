@@ -371,7 +371,9 @@ function buildTurnRating(convId: string, turnIndex: number): TurnRating {
 	const allTiers = modelTiers.filter(
 		(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
 	);
-	const modelIds = allTiers.map((t) => t.modelId);
+	// Use effective (possibly overridden) model IDs so the lookup key
+	// matches what was stored in evalResults during runEvaluation.
+	const modelIds = allTiers.map((t) => resolveModelId(t));
 	const seed = `${convId}-${turnIndex}`;
 	return {
 		conversationId: convId,

@@ -3,7 +3,23 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { unsupportedReason } from '$lib/browser-guard';
+	import { resetAllData } from '$lib/stores/reset';
 	let { children } = $props();
+
+	let settingsOpen = $state(false);
+	let resetting = $state(false);
+
+	async function handleReset() {
+		const msg =
+			'This will delete all your worksheet answers, W3 evaluation results, ratings, and any imported group data. Your OpenRouter API key and theme preference will stay. Continue?';
+		if (!confirm(msg)) return;
+		resetting = true;
+		await resetAllData();
+		resetting = false;
+		settingsOpen = false;
+		// Full reload so all stores re-initialize from empty.
+		window.location.href = '/';
+	}
 
 	const steps = [
 		{ path: '/', label: 'Home' },
@@ -58,7 +74,7 @@
 <header
 	style="position: sticky; top: 0; z-index: 20; background: var(--color-surface); border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow);"
 >
-	<div class="container" style="display: flex; align-items: center; gap: 1rem;">
+	<div class="container" style="display: flex; align-items: center; gap: 0.5rem;">
 		<nav class="stepper" style="flex: 1;">
 			{#each steps as step}
 				<a href={step.path} class={stepClass(step.path)}>{step.label}</a>
@@ -67,6 +83,44 @@
 		<button class="theme-toggle" onclick={cycleTheme} aria-label="Toggle theme">
 			{themeLabel(theme)}
 		</button>
+		<div style="position: relative;">
+			<button
+				class="theme-toggle"
+				onclick={() => (settingsOpen = !settingsOpen)}
+				aria-label="Settings"
+				aria-expanded={settingsOpen}
+			>
+				⚙
+			</button>
+			{#if settingsOpen}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					style="position: fixed; inset: 0; z-index: 30;"
+					onclick={() => (settingsOpen = false)}
+				></div>
+				<div
+					role="menu"
+					style="position: absolute; top: calc(100% + 0.5rem); right: 0; z-index: 31; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); box-shadow: var(--shadow-strong); min-width: 240px; padding: 0.5rem;"
+				>
+					<button
+						class="secondary"
+						style="width: 100%; justify-content: flex-start; text-align: left; color: var(--color-danger); border-color: var(--color-danger);"
+						disabled={resetting}
+						onclick={handleReset}
+					>
+						{resetting ? 'Resetting…' : 'Reset & Clear Data'}
+					</button>
+					<p
+						class="muted"
+						style="font-size: 0.7rem; margin-top: 0.5rem; padding: 0 0.35rem; margin-bottom: 0;"
+					>
+						Wipes worksheet answers, W3 eval results, ratings, and group imports.
+						Theme + API key stay.
+					</p>
+				</div>
+			{/if}
+		</div>
 	</div>
 </header>
 
