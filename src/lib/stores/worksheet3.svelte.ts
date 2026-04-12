@@ -2,6 +2,12 @@ import { dbGet } from './db';
 import { schedulePersist, plainify } from './persist';
 import type { ModelTier } from '$lib/data/tiers';
 import { modelTiers } from '$lib/data/tiers';
+import {
+	seededShuffle as pureSeededShuffle,
+	buildReplayMessages as pureBuildReplayMessages,
+	computeGeneratedTurnCount,
+	hasMoreTurnsToGenerate
+} from './w3-pure';
 
 export interface EvalResult {
 	conversationId: string;
@@ -42,6 +48,17 @@ export interface EvalProgress {
 	lastMessage: string;
 }
 
+export interface ConversationExpansion {
+	convId: string;
+	turnIndex: number;
+	tierProgress: Array<{
+		modelId: string;
+		tierLabel: string;
+		status: 'pending' | 'generating' | 'done' | 'failed';
+	}>;
+	startedAt: string;
+}
+
 export interface W3State {
 	selectedConversations: string[];
 	selectedTierIds: string[];
@@ -52,6 +69,9 @@ export interface W3State {
 	evalResults: Record<string, EvalResult>; // key: `${convId}:${modelId}`
 	turnRatings: TurnRating[];
 	evalProgress: EvalProgress;
+	/** Per-conversation in-flight expansion state. Keyed by convId.
+	 * Absence means no expansion running for that conversation. */
+	conversationExpansions: Record<string, ConversationExpansion>;
 }
 
 const DEFAULT_PROGRESS: EvalProgress = {
@@ -72,7 +92,8 @@ const DEFAULT_STATE: W3State = {
 	modelOverrides: {},
 	evalResults: {},
 	turnRatings: [],
-	evalProgress: { ...DEFAULT_PROGRESS }
+	evalProgress: { ...DEFAULT_PROGRESS },
+	conversationExpansions: {}
 };
 
 let state = $state<W3State>({ ...DEFAULT_STATE });
@@ -93,6 +114,10 @@ export async function loadW3() {
 		state.selectedTierIds = saved.selectedTierIds ?? DEFAULT_STATE.selectedTierIds;
 		state.evalResults = saved.evalResults ?? {};
 		state.turnRatings = saved.turnRatings ?? [];
+		// conversationExpansions is ephemeral — don't rehydrate in-flight state.
+		// If an expansion was running when the tab closed, it's lost; cached
+		// responses for any turns that saved before closure are intact.
+		state.conversationExpansions = {};
 	}
 	loaded = true;
 }
@@ -129,8 +154,7 @@ export function setModelOverride(tierId: string, modelId: string | null) {
 	saveW3();
 }
 
-/** Full W3 reset — clears conversations, tiers, overrides, responses, ratings.
- * Leaves only the default shape. */
+/** Full W3 reset — clears conversations, tiers, overrides, responses, ratings. */
 export function resetW3All() {
 	state.selectedConversations = [];
 	state.selectedTierIds = modelTiers.filter((t) => !t.isAnchor && t.defaultSelected).map((t) => t.id);
@@ -138,22 +162,20 @@ export function resetW3All() {
 	state.evalResults = {};
 	state.turnRatings = [];
 	state.evalProgress = { ...DEFAULT_PROGRESS };
+	state.conversationExpansions = {};
 	saveW3();
 }
 
-/** Clear LLM responses and dependent ratings. Keeps conversation selection,
- * tier selection, and model overrides so the user can re-run evaluation
- * with the same config. Ratings are cleared because they reference
- * now-missing response labels. */
+/** Clear LLM responses and dependent ratings. */
 export function resetW3Responses() {
 	state.evalResults = {};
 	state.turnRatings = [];
 	state.evalProgress = { ...DEFAULT_PROGRESS };
+	state.conversationExpansions = {};
 	saveW3();
 }
 
-/** Clear user ratings only. Keeps LLM responses cached so re-rating is
- * free (no OpenRouter calls). Use this to re-rate with a clean mind. */
+/** Clear user ratings only. */
 export function resetW3Ratings() {
 	state.turnRatings = [];
 	saveW3();
@@ -164,18 +186,141 @@ interface ConversationLike {
 	turns: Array<{ role: string; content: string }>;
 }
 
+interface ConversationTurn {
+	role: string;
+	content: string;
+}
+
+function getEvalKey(convId: string, modelId: string): string {
+	return `${convId}:${modelId}`;
+}
+
+export function isEvalCached(convId: string, modelId: string): boolean {
+	return getEvalKey(convId, modelId) in state.evalResults;
+}
+
+/** How many turns have been generated so far for this conversation,
+ * across every selected tier. A turn counts as "generated" only when every
+ * selected tier has a non-empty response at that index. Missing tiers or
+ * short response arrays drag the count down so the UI never claims a turn
+ * is ready when part of the grid is empty. */
+export function getGeneratedTurnCount(convId: string): number {
+	const activeTiers = modelTiers.filter(
+		(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
+	);
+	const modelIds = activeTiers.map((t) => resolveModelId(t));
+	return computeGeneratedTurnCount(state.evalResults, convId, modelIds);
+}
+
+/** Whether a conversation has more turns that could be generated. */
+export function hasMoreTurns(convId: string, totalUserTurns: number): boolean {
+	return hasMoreTurnsToGenerate(getGeneratedTurnCount(convId), totalUserTurns);
+}
+
+/** Whether a conversation currently has an on-demand expansion in flight. */
+export function isConversationExpanding(convId: string): boolean {
+	return convId in state.conversationExpansions;
+}
+
+export function getConversationExpansion(convId: string): ConversationExpansion | null {
+	return state.conversationExpansions[convId] ?? null;
+}
+
+const buildReplayMessages = pureBuildReplayMessages;
+
+type ReplayOutcome =
+	| { kind: 'ok'; content: string }
+	| { kind: 'empty'; finishReason: string }
+	| { kind: 'truncated'; content: string }
+	| { kind: 'zdr-unavailable'; errorMessage: string }
+	| { kind: 'http-error'; status: number; body: string }
+	| { kind: 'exception'; error: Error };
+
+/** Single-turn API call. Returns a structured outcome so the caller can
+ * decide how to surface the result. Never throws except via AbortError,
+ * which the caller handles. */
+async function replayOneTurn(args: {
+	apiKey: string;
+	modelId: string;
+	messages: Array<{ role: string; content: string }>;
+	signal?: AbortSignal;
+}): Promise<ReplayOutcome> {
+	try {
+		const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${args.apiKey}`,
+				'Content-Type': 'application/json',
+				'HTTP-Referer': window.location.origin,
+				'X-Title': 'Sovereignty Stack Decision SPA'
+			},
+			body: JSON.stringify({
+				model: args.modelId,
+				messages: args.messages,
+				max_tokens: 8192
+			}),
+			signal: args.signal
+		});
+
+		if (!resp.ok) {
+			const errBody = await resp.text();
+			const isZdrUnavailable =
+				resp.status === 404 && errBody.includes('guardrail restrictions');
+			if (isZdrUnavailable) {
+				return {
+					kind: 'zdr-unavailable',
+					errorMessage:
+						'Not available under your OpenRouter ZDR / data-policy settings. Try a different model ID or adjust settings at https://openrouter.ai/settings/privacy.'
+				};
+			}
+			return { kind: 'http-error', status: resp.status, body: errBody.slice(0, 300) };
+		}
+
+		const data = await resp.json();
+		const choice = data.choices?.[0];
+		const content: string = choice?.message?.content ?? '';
+		const finishReason: string = choice?.finish_reason ?? 'unknown';
+
+		if (!content || content.length === 0) {
+			return { kind: 'empty', finishReason };
+		}
+		if (finishReason === 'length') {
+			return {
+				kind: 'truncated',
+				content:
+					content +
+					'\n\n[⚠ Response truncated at max_tokens. Re-run this pair to get a full response.]'
+			};
+		}
+		return { kind: 'ok', content };
+	} catch (e) {
+		return { kind: 'exception', error: e as Error };
+	}
+}
+
+/** Persist one response into evalResults at the given turn index, creating
+ * or extending the response array. Marks intermediate slots as empty when
+ * writing past the existing length (defensive; sequential replay should
+ * never skip indices). */
+function writeTurnResult(convId: string, modelId: string, turnIndex: number, response: string) {
+	const key = getEvalKey(convId, modelId);
+	const existing = state.evalResults[key];
+	const responses = existing?.responses ? [...existing.responses] : [];
+	while (responses.length < turnIndex) responses.push('');
+	responses[turnIndex] = response;
+	state.evalResults[key] = {
+		conversationId: convId,
+		modelId,
+		responses,
+		cachedAt: new Date().toISOString()
+	};
+}
+
 /**
  * Re-run a (conversation × model) pair from a specific turn forward,
  * preserving cached responses for earlier turns and the user's ratings
- * for turns that aren't being regenerated.
- *
- * startTurn = 0 means a full re-run.
- * startTurn = N replays turns [N..end] using the stored turn-[0..N-1]
- * responses as context for the model, so the regenerated answers stay
- * coherent with what the user already read and rated.
- *
- * Only ratings for turns >= startTurn on this specific modelId are
- * dropped — prior ratings survive.
+ * for turns that aren't being regenerated. Used by the existing per-turn
+ * "re-run" button in the rating UI.
  */
 export async function rerunPairFromTurn(
 	conv: ConversationLike,
@@ -194,10 +339,8 @@ export async function rerunPairFromTurn(
 
 	if (startTurn < 0 || startTurn >= userTurns.length) return;
 
-	// Preserve responses for turns before startTurn.
 	const preserved = existing?.responses.slice(0, startTurn) ?? [];
 
-	// Clear ratings for this (conversation, modelId) at turns >= startTurn.
 	state.turnRatings = state.turnRatings.map((r) => {
 		if (r.conversationId !== conv.id) return r;
 		if (r.turnIndex < startTurn) return r;
@@ -206,14 +349,6 @@ export async function rerunPairFromTurn(
 		return { ...r, ratings: remainingRatings, revealed: false };
 	});
 
-	// Rebuild message history from preserved context.
-	const messages: Array<{ role: string; content: string }> = [];
-	for (let i = 0; i < startTurn; i++) {
-		messages.push({ role: 'user', content: userTurns[i].content });
-		messages.push({ role: 'assistant', content: preserved[i] ?? '' });
-	}
-
-	// Initialize progress for this single-pair partial run.
 	const pairKey = `${conv.id}:${effectiveModelId}:rerun-from-${startTurn}`;
 	state.evalProgress = {
 		running: true,
@@ -238,64 +373,63 @@ export async function rerunPairFromTurn(
 	};
 
 	const newResponses: string[] = [];
+	const messages = buildReplayMessages(userTurns, preserved, startTurn);
+	// Strip the trailing user message — we add it back inside the loop so
+	// each turn's messages are built incrementally.
+	messages.pop();
 
 	for (let turnIdx = startTurn; turnIdx < userTurns.length; turnIdx++) {
 		if (signal?.aborted) break;
-		const userTurn = userTurns[turnIdx];
 		state.evalProgress.active = state.evalProgress.active.map((p) =>
 			p.pairKey === pairKey
 				? { ...p, currentTurn: turnIdx + 1, status: `turn ${turnIdx + 1}/${userTurns.length}` }
 				: p
 		);
-		messages.push({ role: 'user', content: userTurn.content });
+		messages.push({ role: 'user', content: userTurns[turnIdx].content });
 
-		try {
-			const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${apiKey}`,
-					'Content-Type': 'application/json',
-					'HTTP-Referer': window.location.origin,
-					'X-Title': 'Sovereignty Stack Decision SPA'
-				},
-				body: JSON.stringify({
-					model: effectiveModelId,
-					messages: [...messages],
-					max_tokens: 8192
-				}),
-				signal
-			});
+		const outcome = await replayOneTurn({
+			apiKey,
+			modelId: effectiveModelId,
+			messages: [...messages],
+			signal
+		});
 
-			if (!resp.ok) {
-				const errBody = await resp.text();
-				const errMsg = `[${tier.label} re-run turn ${turnIdx + 1}] HTTP ${resp.status}: ${errBody.slice(0, 300)}`;
-				state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
-				newResponses.push(`[Error ${resp.status}: ${errBody.slice(0, 200)}]`);
-				messages.push({ role: 'assistant', content: newResponses[newResponses.length - 1] });
-				continue;
-			}
+		if (outcome.kind === 'exception' && signal?.aborted) break;
 
-			const data = await resp.json();
-			const choice = data.choices?.[0];
-			const content = choice?.message?.content ?? '';
-			const finishReason = choice?.finish_reason ?? 'unknown';
-
-			if (!content) {
-				newResponses.push(`[No response — finish_reason: ${finishReason}]`);
-				messages.push({ role: 'assistant', content: '' });
-			} else {
-				const suffix =
-					finishReason === 'length'
-						? '\n\n[⚠ Response truncated at max_tokens. Re-run this pair to get a full response.]'
-						: '';
-				newResponses.push(content + suffix);
-				messages.push({ role: 'assistant', content });
-			}
-		} catch (e) {
-			if (signal?.aborted) break;
-			const errMsg = `[${tier.label} re-run turn ${turnIdx + 1}] ${(e as Error).message}`;
-			state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
-			newResponses.push(`[Error: ${(e as Error).message}]`);
+		const label = `[${tier.label} re-run turn ${turnIdx + 1}]`;
+		if (outcome.kind === 'ok') {
+			newResponses.push(outcome.content);
+			messages.push({ role: 'assistant', content: outcome.content });
+		} else if (outcome.kind === 'truncated') {
+			newResponses.push(outcome.content);
+			messages.push({ role: 'assistant', content: outcome.content });
+			state.evalProgress.errors = [...state.evalProgress.errors, `${label} Truncated.`];
+		} else if (outcome.kind === 'empty') {
+			newResponses.push(`[No response — finish_reason: ${outcome.finishReason}]`);
+			messages.push({ role: 'assistant', content: '' });
+			state.evalProgress.errors = [
+				...state.evalProgress.errors,
+				`${label} Empty response (finish_reason: ${outcome.finishReason}).`
+			];
+		} else if (outcome.kind === 'http-error') {
+			state.evalProgress.errors = [
+				...state.evalProgress.errors,
+				`${label} HTTP ${outcome.status}: ${outcome.body}`
+			];
+			newResponses.push(`[Error ${outcome.status}: ${outcome.body}]`);
+			messages.push({ role: 'assistant', content: newResponses[newResponses.length - 1] });
+		} else if (outcome.kind === 'zdr-unavailable') {
+			state.evalProgress.errors = [
+				...state.evalProgress.errors,
+				`${label} ${outcome.errorMessage}`
+			];
+			break;
+		} else if (outcome.kind === 'exception') {
+			state.evalProgress.errors = [
+				...state.evalProgress.errors,
+				`${label} ${outcome.error.message}`
+			];
+			newResponses.push(`[Error: ${outcome.error.message}]`);
 			messages.push({ role: 'assistant', content: newResponses[newResponses.length - 1] });
 		}
 	}
@@ -341,35 +475,126 @@ export function toggleTier(tierId: string) {
 	saveW3();
 }
 
-function getEvalKey(convId: string, modelId: string): string {
-	return `${convId}:${modelId}`;
+const CONCURRENCY = 4;
+
+/** Shared per-pair processor for a single turn index. Reads preserved
+ * responses from the cache (or starts fresh at turn 0) and writes the new
+ * response back. Pair-level progress is surfaced via evalProgress.active. */
+async function processPairOneTurn(
+	apiKey: string,
+	conv: { id: string; turns: ConversationTurn[] },
+	tier: ModelTier,
+	turnIndex: number,
+	pairKeySuffix: string,
+	signal?: AbortSignal
+): Promise<'ok' | 'failed' | 'aborted'> {
+	const effectiveModelId = resolveModelId(tier);
+	const userTurns = conv.turns.filter((t) => t.role === 'user');
+	if (turnIndex < 0 || turnIndex >= userTurns.length) return 'failed';
+
+	const key = getEvalKey(conv.id, effectiveModelId);
+	const existing = state.evalResults[key];
+	const preserved = existing?.responses.slice(0, turnIndex) ?? [];
+
+	// Reject gaps: every prior turn must be generated before this one.
+	if (preserved.length < turnIndex) return 'failed';
+
+	const pairKey = `${conv.id}:${effectiveModelId}:${pairKeySuffix}`;
+	state.evalProgress.active = [
+		...state.evalProgress.active,
+		{
+			pairKey,
+			convId: conv.id,
+			tierLabel: tier.label,
+			modelId: effectiveModelId,
+			currentTurn: turnIndex + 1,
+			currentTurnTotal: userTurns.length,
+			status: `turn ${turnIndex + 1}/${userTurns.length} in flight`
+		}
+	];
+
+	const messages = buildReplayMessages(userTurns, preserved, turnIndex);
+	const outcome = await replayOneTurn({ apiKey, modelId: effectiveModelId, messages, signal });
+
+	state.evalProgress.active = state.evalProgress.active.filter((p) => p.pairKey !== pairKey);
+
+	if (signal?.aborted) return 'aborted';
+
+	const label = `[${tier.label} / ${effectiveModelId} / ${conv.id.slice(0, 14)} turn ${
+		turnIndex + 1
+	}]`;
+
+	if (outcome.kind === 'ok') {
+		writeTurnResult(conv.id, effectiveModelId, turnIndex, outcome.content);
+		return 'ok';
+	}
+	if (outcome.kind === 'truncated') {
+		writeTurnResult(conv.id, effectiveModelId, turnIndex, outcome.content);
+		state.evalProgress.errors = [...state.evalProgress.errors, `${label} Truncated at max_tokens.`];
+		return 'ok';
+	}
+	if (outcome.kind === 'empty') {
+		writeTurnResult(
+			conv.id,
+			effectiveModelId,
+			turnIndex,
+			`[No response — finish_reason: ${outcome.finishReason}]`
+		);
+		state.evalProgress.errors = [
+			...state.evalProgress.errors,
+			`${label} Empty response (finish_reason: ${outcome.finishReason}).`
+		];
+		return 'failed';
+	}
+	if (outcome.kind === 'zdr-unavailable') {
+		state.evalProgress.errors = [...state.evalProgress.errors, `${label} ${outcome.errorMessage}`];
+		return 'failed';
+	}
+	if (outcome.kind === 'http-error') {
+		writeTurnResult(
+			conv.id,
+			effectiveModelId,
+			turnIndex,
+			`[Error ${outcome.status}: ${outcome.body}]`
+		);
+		state.evalProgress.errors = [
+			...state.evalProgress.errors,
+			`${label} HTTP ${outcome.status}: ${outcome.body}`
+		];
+		return 'failed';
+	}
+	// exception
+	writeTurnResult(conv.id, effectiveModelId, turnIndex, `[Error: ${outcome.error.message}]`);
+	state.evalProgress.errors = [...state.evalProgress.errors, `${label} ${outcome.error.message}`];
+	return 'failed';
 }
 
-export function isEvalCached(convId: string, modelId: string): boolean {
-	return getEvalKey(convId, modelId) in state.evalResults;
-}
-
-interface ConversationTurn {
-	role: string;
-	content: string;
-}
-
-export async function runEvaluation(
+/**
+ * Initial batch: generate turn 0 only for every (conversation × selected tier)
+ * pair that isn't already cached at turn 0. Runs the existing concurrent
+ * worker pool. Later turns are generated on demand via expandConversationTurn.
+ */
+export async function runInitialBatch(
 	conversations: Array<{ id: string; turns: ConversationTurn[] }>,
 	onProgress: (msg: string) => void,
 	signal?: AbortSignal
 ): Promise<void> {
-	const apiKey = sessionStorage.getItem('openrouter-key');
-	if (!apiKey) throw new Error('No API key');
+	const storedKey = sessionStorage.getItem('openrouter-key');
+	if (!storedKey) throw new Error('No API key');
+	const apiKey: string = storedKey;
 
 	const allTiers = modelTiers.filter(
 		(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
 	);
 
-	const pairs: Array<{ conv: typeof conversations[0]; tier: ModelTier }> = [];
+	const pairs: Array<{ conv: { id: string; turns: ConversationTurn[] }; tier: ModelTier }> = [];
 	for (const conv of conversations) {
 		for (const tier of allTiers) {
-			if (!isEvalCached(conv.id, tier.modelId)) {
+			const modelId = resolveModelId(tier);
+			const key = getEvalKey(conv.id, modelId);
+			const existing = state.evalResults[key];
+			// Turn 0 is already generated if responses has at least one entry.
+			if (!existing || existing.responses.length === 0) {
 				pairs.push({ conv, tier });
 			}
 		}
@@ -383,166 +608,19 @@ export async function runEvaluation(
 		errors: [],
 		current: '',
 		currentTurn: 0,
-		currentTurnTotal: 0,
-		lastMessage: 'Starting…'
+		currentTurnTotal: 1,
+		lastMessage: 'Generating turn 1 for all conversations…'
 	};
 
-	const CONCURRENCY = 4;
-
-	function addActive(pair: ActivePair) {
-		state.evalProgress.active = [...state.evalProgress.active, pair];
-	}
-
-	function updateActive(pairKey: string, patch: Partial<ActivePair>) {
-		state.evalProgress.active = state.evalProgress.active.map((p) =>
-			p.pairKey === pairKey ? { ...p, ...patch } : p
-		);
-	}
-
-	function removeActive(pairKey: string) {
-		state.evalProgress.active = state.evalProgress.active.filter((p) => p.pairKey !== pairKey);
-	}
-
-	/** Process one (conversation × tier) pair — all turns run sequentially within. */
-	async function processPair(conv: typeof conversations[0], tier: ModelTier) {
-		const effectiveModelId = resolveModelId(tier);
-		const pairKey = `${conv.id}:${effectiveModelId}`;
-
-		const userTurns = conv.turns.filter((t) => t.role === 'user');
-		addActive({
-			pairKey,
-			convId: conv.id,
-			tierLabel: tier.label,
-			modelId: effectiveModelId,
-			currentTurn: 0,
-			currentTurnTotal: userTurns.length,
-			status: 'starting…'
-		});
-
-		const responses: string[] = [];
-		const messages: Array<{ role: string; content: string }> = [];
-		let pairAborted = false;
-
-		for (let turnIdx = 0; turnIdx < userTurns.length; turnIdx++) {
-			if (signal?.aborted) break;
-			const userTurn = userTurns[turnIdx];
-			updateActive(pairKey, {
-				currentTurn: turnIdx + 1,
-				status: `turn ${turnIdx + 1}/${userTurns.length} in flight`
-			});
-
-			messages.push({ role: 'user', content: userTurn.content });
-
-			try {
-				const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-					method: 'POST',
-					headers: {
-						Authorization: `Bearer ${apiKey}`,
-						'Content-Type': 'application/json',
-						'HTTP-Referer': window.location.origin,
-						'X-Title': 'Sovereignty Stack Decision SPA'
-					},
-					body: JSON.stringify({
-						model: effectiveModelId,
-						messages: [...messages],
-						max_tokens: 8192
-					}),
-					signal
-				});
-
-				if (!resp.ok) {
-					const errBody = await resp.text();
-					// Detect OpenRouter's "no ZDR endpoint available" 404 so we can
-					// skip remaining turns and give a single clear error per tier
-					// instead of N copies of the same message.
-					const isZdrUnavailable =
-						resp.status === 404 && errBody.includes('guardrail restrictions');
-					const prefix = `[${tier.label} / ${effectiveModelId}`;
-					const errMsg = isZdrUnavailable
-						? `${prefix}] Not available under your OpenRouter ZDR / data-policy settings. Try a different model ID or adjust settings at https://openrouter.ai/settings/privacy.`
-						: `${prefix} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] HTTP ${resp.status}: ${errBody.slice(0, 300)}`;
-					state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
-					updateActive(pairKey, {
-						status: isZdrUnavailable ? 'ZDR unavailable — skipping' : `HTTP ${resp.status}`
-					});
-					if (isZdrUnavailable) {
-						// Abandon this entire pair — retrying other turns will just
-						// hit the same error.
-						pairAborted = true;
-						break;
-					}
-					responses.push(`[Error ${resp.status}: ${errBody.slice(0, 200)}]`);
-					messages.push({ role: 'assistant', content: responses[responses.length - 1] });
-					continue;
-				}
-
-				const data = await resp.json();
-				const choice = data.choices?.[0];
-				const content = choice?.message?.content ?? '';
-				const finishReason = choice?.finish_reason ?? 'unknown';
-
-				if (!content || content.length === 0) {
-					const errMsg = `[${tier.label} / ${effectiveModelId} / ${conv.id.slice(
-						0,
-						14
-					)} turn ${turnIdx + 1}] Empty response (finish_reason: ${finishReason}).`;
-					state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
-					responses.push(`[No response — finish_reason: ${finishReason}]`);
-					messages.push({ role: 'assistant', content: '' });
-				} else {
-					// Flag truncation visibly in the stored content so the rater can see it
-					// was cut short (finish_reason === 'length' means max_tokens hit).
-					const suffix =
-						finishReason === 'length'
-							? '\n\n[⚠ Response truncated at max_tokens. Re-run this pair to get a full response.]'
-							: '';
-					responses.push(content + suffix);
-					messages.push({ role: 'assistant', content });
-					if (finishReason === 'length') {
-						state.evalProgress.errors = [
-							...state.evalProgress.errors,
-							`[${tier.label} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] Truncated at max_tokens.`
-						];
-					}
-				}
-			} catch (e) {
-				if (signal?.aborted) break;
-				const errMsg = `[${tier.label} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] ${
-					(e as Error).message
-				}`;
-				state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
-				responses.push(`[Error: ${(e as Error).message}]`);
-				messages.push({ role: 'assistant', content: responses[responses.length - 1] });
-			}
-		}
-
-		if (!signal?.aborted && !pairAborted) {
-			const key = getEvalKey(conv.id, effectiveModelId);
-			state.evalResults[key] = {
-				conversationId: conv.id,
-				modelId: effectiveModelId,
-				responses,
-				cachedAt: new Date().toISOString()
-			};
-			state.evalProgress.done++;
-			saveW3();
-		} else if (pairAborted) {
-			// Still count it toward "done" so the progress bar doesn't stall.
-			state.evalProgress.done++;
-		}
-
-		removeActive(pairKey);
-	}
-
-	// Worker pool: CONCURRENCY workers pulling pairs off a shared queue.
 	const queue = [...pairs];
-	onProgress(`Running up to ${CONCURRENCY} pairs in parallel…`);
+	onProgress(`Running up to ${CONCURRENCY} pairs in parallel (turn 1 only)…`);
 
 	async function worker() {
 		while (queue.length > 0 && !signal?.aborted) {
 			const next = queue.shift();
 			if (!next) break;
-			await processPair(next.conv, next.tier);
+			const result = await processPairOneTurn(apiKey, next.conv, next.tier, 0, 'initial', signal);
+			if (result === 'ok' || result === 'failed') state.evalProgress.done++;
 		}
 	}
 
@@ -550,6 +628,7 @@ export async function runEvaluation(
 		Array.from({ length: Math.min(CONCURRENCY, pairs.length) }, () => worker())
 	);
 
+	saveW3();
 	state.evalProgress = {
 		...state.evalProgress,
 		running: false,
@@ -557,24 +636,139 @@ export async function runEvaluation(
 		current: '',
 		currentTurn: 0,
 		currentTurnTotal: 0,
-		lastMessage: signal?.aborted ? 'Cancelled.' : 'Evaluation complete.'
+		lastMessage: signal?.aborted
+			? 'Cancelled.'
+			: 'Initial batch complete. Use "Generate next turn" per conversation to go deeper.'
 	};
 }
 
-// Blind rating helpers
-function seededShuffle(arr: string[], seed: string): string[] {
-	const copy = [...arr];
-	let hash = 0;
-	for (let i = 0; i < seed.length; i++) {
-		hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+/**
+ * On-demand expansion: generate the next un-generated turn for one
+ * conversation across every currently-selected tier. Sequential per tier is
+ * not required — the worker pool handles concurrency up to CONCURRENCY.
+ *
+ * Each conversation tracks its own expansion state in
+ * state.conversationExpansions[convId]. While one conversation is expanding,
+ * other conversations remain fully interactive.
+ */
+export async function expandConversationTurn(
+	conv: { id: string; turns: ConversationTurn[] },
+	onProgress: (msg: string) => void,
+	signal?: AbortSignal
+): Promise<void> {
+	const storedKey = sessionStorage.getItem('openrouter-key');
+	if (!storedKey) throw new Error('No API key');
+	const apiKey: string = storedKey;
+	if (conv.id in state.conversationExpansions) return;
+
+	const userTurns = conv.turns.filter((t) => t.role === 'user');
+	const nextTurnIndex = getGeneratedTurnCount(conv.id);
+	if (nextTurnIndex >= userTurns.length) return;
+
+	const activeTiers = modelTiers.filter(
+		(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
+	);
+
+	// Register the expansion so UI indicators show up and re-entry is blocked.
+	state.conversationExpansions = {
+		...state.conversationExpansions,
+		[conv.id]: {
+			convId: conv.id,
+			turnIndex: nextTurnIndex,
+			tierProgress: activeTiers.map((t) => ({
+				modelId: resolveModelId(t),
+				tierLabel: t.label,
+				status: 'pending' as const
+			})),
+			startedAt: new Date().toISOString()
+		}
+	};
+
+	onProgress(
+		`Generating turn ${nextTurnIndex + 1} for ${conv.id.slice(0, 14)} across ${activeTiers.length} tiers…`
+	);
+
+	const queue = activeTiers.map((tier) => ({ tier }));
+
+	async function worker() {
+		while (queue.length > 0 && !signal?.aborted) {
+			const next = queue.shift();
+			if (!next) break;
+			const modelId = resolveModelId(next.tier);
+			const expansion = state.conversationExpansions[conv.id];
+			if (expansion) {
+				expansion.tierProgress = expansion.tierProgress.map((tp) =>
+					tp.modelId === modelId ? { ...tp, status: 'generating' as const } : tp
+				);
+			}
+
+			const result = await processPairOneTurn(
+				apiKey,
+				conv,
+				next.tier,
+				nextTurnIndex,
+				`expand-${nextTurnIndex}`,
+				signal
+			);
+
+			const expansion2 = state.conversationExpansions[conv.id];
+			if (expansion2) {
+				expansion2.tierProgress = expansion2.tierProgress.map((tp) =>
+					tp.modelId === modelId
+						? { ...tp, status: result === 'ok' ? ('done' as const) : ('failed' as const) }
+						: tp
+				);
+			}
+		}
 	}
-	for (let i = copy.length - 1; i > 0; i--) {
-		hash = ((hash << 5) - hash + i) | 0;
-		const j = Math.abs(hash) % (i + 1);
-		[copy[i], copy[j]] = [copy[j], copy[i]];
-	}
-	return copy;
+
+	await Promise.all(
+		Array.from({ length: Math.min(CONCURRENCY, activeTiers.length) }, () => worker())
+	);
+
+	saveW3();
+
+	// Clear the expansion marker. Leave the turn in the cache either way.
+	const { [conv.id]: _cleared, ...remaining } = state.conversationExpansions;
+	state.conversationExpansions = remaining;
 }
+
+/**
+ * Retry a single (conversation, tier, turn) triple. Used when one candidate
+ * on a turn failed (empty response, HTTP error) but the others succeeded —
+ * re-runs just that one without touching the others.
+ */
+export async function retryCandidateTurn(
+	conv: { id: string; turns: ConversationTurn[] },
+	tier: ModelTier,
+	turnIndex: number,
+	signal?: AbortSignal
+): Promise<'ok' | 'failed' | 'aborted'> {
+	const apiKey = sessionStorage.getItem('openrouter-key');
+	if (!apiKey) throw new Error('No API key');
+
+	const userTurns = conv.turns.filter((t) => t.role === 'user');
+	if (turnIndex < 0 || turnIndex >= userTurns.length) return 'failed';
+
+	const effectiveModelId = resolveModelId(tier);
+	const key = getEvalKey(conv.id, effectiveModelId);
+	const existing = state.evalResults[key];
+	if (!existing || existing.responses.length < turnIndex) return 'failed';
+
+	const result = await processPairOneTurn(
+		apiKey,
+		conv,
+		tier,
+		turnIndex,
+		`retry-${turnIndex}`,
+		signal
+	);
+	saveW3();
+	return result;
+}
+
+// Blind rating helpers
+const seededShuffle = pureSeededShuffle;
 
 export function getTurnRating(convId: string, turnIndex: number): TurnRating | null {
 	return (
@@ -588,8 +782,6 @@ function buildTurnRating(convId: string, turnIndex: number): TurnRating {
 	const allTiers = modelTiers.filter(
 		(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
 	);
-	// Use effective (possibly overridden) model IDs so the lookup key
-	// matches what was stored in evalResults during runEvaluation.
 	const modelIds = allTiers.map((t) => resolveModelId(t));
 	const seed = `${convId}-${turnIndex}`;
 	return {
@@ -612,7 +804,8 @@ export function ensureTurnRating(convId: string, turnIndex: number): TurnRating 
 	return existing;
 }
 
-/** Pure read — safe for template expressions. Returns existing or a built placeholder. Does NOT persist. */
+/** Pure read — safe for template expressions. Returns existing or a built
+ * placeholder. Does NOT persist. */
 export function getOrCreateTurnRating(convId: string, turnIndex: number): TurnRating {
 	return getTurnRating(convId, turnIndex) ?? buildTurnRating(convId, turnIndex);
 }
@@ -676,9 +869,8 @@ export function computeMetrics(): TierMetrics[] {
 			modelId: tier.modelId,
 			adequacyRate,
 			criticalFailureRate,
-			weightedAdequacy: adequacyRate, // simplified: no frequency weights yet
-			meetsThreshold:
-				adequacyRate >= 0.8 && criticalFailureRate <= 0.1
+			weightedAdequacy: adequacyRate,
+			meetsThreshold: adequacyRate >= 0.8 && criticalFailureRate <= 0.1
 		};
 	});
 }
