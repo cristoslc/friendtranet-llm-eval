@@ -2,7 +2,7 @@
 title: "Fix qwen3.5-9b Turn 5 Empty Response"
 artifact: SPEC-009
 track: implementable
-status: Ready
+status: Complete
 author: Cristos L-C
 created: 2026-04-12
 last-updated: 2026-04-12
@@ -158,3 +158,4 @@ lack of a unit test harness.
 | Phase | Date | Commit | Notes |
 |-------|------|--------|-------|
 | Ready | 2026-04-12 | df29230 | Initial creation |
+| Complete | 2026-04-12 | aec47dc | Implementation + live smoke (6/6) + retro embedded; phase skip Ready→Complete (bug-tier, single-session) |
