@@ -1,5 +1,5 @@
 import { dbGet } from './db';
-import { schedulePersist } from './persist';
+import { schedulePersist, plainify } from './persist';
 import { hardwareTiers } from '$lib/data/tiers';
 
 export interface W2State {
@@ -42,7 +42,11 @@ export async function loadW2() {
 }
 
 export function saveW2() {
-	schedulePersist('worksheets', 'w2', $state.snapshot(state));
+	try {
+		schedulePersist('worksheets', 'w2', plainify(state));
+	} catch {
+		// Silent — don't let persistence errors cascade through HMR forwarder.
+	}
 }
 
 export function toggleCategory(id: string) {

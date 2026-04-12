@@ -1,5 +1,5 @@
 import { dbGet } from './db';
-import { schedulePersist } from './persist';
+import { schedulePersist, plainify } from './persist';
 
 export interface ThreatResponse {
 	probabilityIndex: number | null;
@@ -41,11 +41,19 @@ export async function loadW1() {
 }
 
 export function saveW1() {
-	schedulePersist('worksheets', 'w1', $state.snapshot({
-		responses: state.responses,
-		riskAversionRows: state.riskAversionRows,
-		riskAversionMultipliers: state.riskAversionMultipliers
-	}));
+	try {
+		schedulePersist(
+			'worksheets',
+			'w1',
+			plainify({
+				responses: state.responses,
+				riskAversionRows: state.riskAversionRows,
+				riskAversionMultipliers: state.riskAversionMultipliers
+			})
+		);
+	} catch {
+		// Silent — don't let persistence errors cascade through HMR forwarder.
+	}
 }
 
 function ensureResponse(threatId: number) {

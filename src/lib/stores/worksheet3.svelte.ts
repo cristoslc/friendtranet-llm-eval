@@ -1,5 +1,5 @@
 import { dbGet } from './db';
-import { schedulePersist } from './persist';
+import { schedulePersist, plainify } from './persist';
 import type { ModelTier } from '$lib/data/tiers';
 import { modelTiers } from '$lib/data/tiers';
 
@@ -58,12 +58,20 @@ export async function loadW3() {
 }
 
 function saveW3() {
-	schedulePersist('worksheets', 'w3', $state.snapshot({
-		selectedConversations: state.selectedConversations,
-		selectedTierIds: state.selectedTierIds,
-		evalResults: state.evalResults,
-		turnRatings: state.turnRatings
-	}));
+	try {
+		schedulePersist(
+			'worksheets',
+			'w3',
+			plainify({
+				selectedConversations: state.selectedConversations,
+				selectedTierIds: state.selectedTierIds,
+				evalResults: state.evalResults,
+				turnRatings: state.turnRatings
+			})
+		);
+	} catch {
+		// Silent — don't let persistence errors cascade through HMR forwarder.
+	}
 }
 
 export function toggleConversation(id: string) {
