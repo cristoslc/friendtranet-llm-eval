@@ -77,6 +77,24 @@ Per-conversation, per-tier progress bar. Show which conversation and tier are cu
 
 Cancel button that stops after the current in-flight call completes. Partial results are cached — resuming later skips completed evaluations.
 
+#### In-flight vs. done presentation
+
+The rater must be able to tell at a glance whether a run is still working or has finished. Counters alone are not enough — the visual must agree.
+
+Rules:
+
+- A worker row never shows a filled-to-100% progress bar while any call for that pair is still in flight. The last increment is reserved for "response received and saved".
+- The worker row keeps rendering — not collapsed, not faded — until its pair is confirmed complete. Treat "N of N turns streamed" and "pair complete" as two different states.
+- While the final turn is awaiting its response, show a `finalizing` label on the worker row instead of jumping the bar to full. The bar holds at one tick short of full until the save lands.
+- The overall progress bar advances only when pair counts advance. Worker-row motion never drives the overall bar.
+- When every pair is complete, the block changes shape — not only color. Swap the Cancel button for a dismiss or continue control so the closed state reads as closed.
+- Parallel worker rows remain visibly parallel. One row per worker for the duration of the run.
+
+Anti-patterns to avoid:
+
+- A worker row at `5/5` with a fully blue bar while the overall counter still reads `0/1 pairs complete`. This is the exact confusion this design section exists to prevent.
+- Collapsing the worker row the moment its last response arrives. The row should stay visible through the save step.
+
 ### Caching
 
 Results cached by `(conversation hash, model ID)` in IndexedDB. If a conversation has already been evaluated against a tier, show "cached" badge and skip the API call. Re-evaluation requires explicit "re-run" action per entry.

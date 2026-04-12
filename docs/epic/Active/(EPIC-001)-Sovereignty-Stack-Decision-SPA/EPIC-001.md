@@ -27,6 +27,9 @@ Build and ship the complete decision SPA — from static scaffold through group 
 | SPEC-003 | Capability Evaluation | ready |
 | SPEC-004 | Group Aggregation View | ready |
 | SPEC-005 | GitHub Pages Deployment | ready |
+| SPEC-006 | Per-Turn Conversation Switching in W3 Rating | ready |
+| SPEC-007 | Custom Conversation Prompt with Multi-Turn Chat | ready |
+| SPEC-008 | Fix Evaluation Progress Completion Presentation | ready |
 
 ## Sequencing
 
