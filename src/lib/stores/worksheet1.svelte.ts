@@ -3,7 +3,7 @@ import { dbGet, dbSet } from './db';
 export interface ThreatResponse {
 	probabilityIndex: number | null;
 	impactSelections: Record<string, number | null>;
-	hwMitigation: number;
+	hwMitigation?: number;
 }
 
 export interface W1State {
@@ -47,38 +47,33 @@ export async function saveW1() {
 	})));
 }
 
-export function setThreatProbability(threatId: number, probabilityIndex: number) {
+function ensureResponse(threatId: number) {
 	if (!state.responses[threatId]) {
 		state.responses[threatId] = {
 			probabilityIndex: null,
-			impactSelections: {},
-			hwMitigation: 0
+			impactSelections: {}
 		};
 	}
+}
+
+export function setThreatProbability(threatId: number, probabilityIndex: number) {
+	ensureResponse(threatId);
 	state.responses[threatId].probabilityIndex = probabilityIndex;
 	saveW1();
 }
 
 export function setThreatImpact(threatId: number, scaleName: string, levelIndex: number) {
-	if (!state.responses[threatId]) {
-		state.responses[threatId] = {
-			probabilityIndex: null,
-			impactSelections: {},
-			hwMitigation: 0
-		};
+	ensureResponse(threatId);
+	if (levelIndex < 0) {
+		state.responses[threatId].impactSelections[scaleName] = null;
+	} else {
+		state.responses[threatId].impactSelections[scaleName] = levelIndex;
 	}
-	state.responses[threatId].impactSelections[scaleName] = levelIndex;
 	saveW1();
 }
 
 export function setHwMitigation(threatId: number, value: number) {
-	if (!state.responses[threatId]) {
-		state.responses[threatId] = {
-			probabilityIndex: null,
-			impactSelections: {},
-			hwMitigation: value
-		};
-	}
+	ensureResponse(threatId);
 	state.responses[threatId].hwMitigation = value;
 	saveW1();
 }

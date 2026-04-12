@@ -127,88 +127,121 @@ async function design002() {
 	assert(text.includes('Supply-chain compromise'), 'D002: Threat 8 "Supply-chain compromise" present');
 	assert(text.includes('Nation-state insider'), 'D002: Threat 10 "Nation-state insider" present');
 
+	// Clear prior state (close any open IDB connection first)
+	await page.evaluate(async () => {
+		return new Promise((resolve) => {
+			const req = indexedDB.deleteDatabase('sovereignty-stack');
+			req.onsuccess = () => resolve();
+			req.onerror = () => resolve();
+			req.onblocked = () => resolve();
+			setTimeout(resolve, 1500);
+		});
+	});
+	await page.reload({ waitUntil: 'networkidle0' });
+	await waitMs(800);
+
+	// --- Empty state check — must run before any selections ---
+	const summaryEmpty = await page.$eval('.summary-card', (el) => el.textContent ?? '');
+	assert(
+		summaryEmpty.includes('Set probability and impact') || summaryEmpty.includes('at least one threat'),
+		`D002: Empty state prompt shows before any selections (got "${summaryEmpty.slice(0, 80)}")`
+	);
+
 	// HW:0% badge on threat 8
 	const html = await pageHtml();
 	assert(html.includes('HW: 0%'), 'D002: Threat 8 shows HW: 0% badge');
 
-	// --- Probability Dropdown ---
-	console.log('\n  Probability Dropdown');
-	const probOptions = await page.$$eval('select option', (els) =>
-		els.filter((e) => e.textContent?.includes('never') || e.textContent?.includes('Rare') || e.textContent?.includes('Occasional') || e.textContent?.includes('Common') || e.textContent?.includes('Frequent') || e.textContent?.includes('Very rare') || e.textContent?.includes('Select')).length
-	);
-	assert(probOptions >= 7, 'D002: Probability options include 6 anchors + Select placeholder');
-	const allProbText = await pageText();
-	assert(allProbText.includes('Effectively never'), 'D002: "Effectively never" option present');
-	assert(allProbText.includes('Frequent'), 'D002: "Frequent" option present');
+	// --- Always-visible threat descriptions ---
+	console.log('\n  Descriptions (always visible)');
+	const newText = await pageText();
+	assert(newText.includes('ZDR claim fails'), 'D002: Threat 1 full description visible without click');
+	assert(newText.includes('unauthorized access during session'), 'D002: Threat 2 description visible');
 
-	// --- Impact Scales ---
-	console.log('\n  Impact Scales');
-	assert(text.includes('Monetary'), 'D002: Monetary impact scale label present');
-	assert(text.includes('Psychological-relational'), 'D002: Psychological-relational scale label present');
-	assert(text.includes('Third-party harm'), 'D002: Third-party harm scale label present');
+	// --- Probability slider with legend anchors ---
+	console.log('\n  Probability slider');
+	assert(newText.includes('Effectively never') || newText.includes('Never'), 'D002: Probability anchor labels visible on tick scale');
+	assert(newText.includes('Frequent'), 'D002: "Frequent" anchor label visible');
 
-	// Verify dollar values in impact dropdowns
-	assert(html.includes('$5,500') || html.includes('$5500'), 'D002: Moderate monetary ($5,500) option present');
-	assert(html.includes('$55,000') || html.includes('$55000'), 'D002: Major monetary ($55,000) option present');
+	// --- Impact scales as sliders ---
+	console.log('\n  Impact sliders');
+	assert(newText.includes('Monetary'), 'D002: Monetary impact scale label present');
+	assert(newText.includes('Psychological-relational'), 'D002: Psychological-relational scale label present');
+	assert(newText.includes('Third-party harm'), 'D002: Third-party harm scale label present');
 
-	// --- HW Mitigation Slider ---
-	console.log('\n  HW Mitigation Slider');
+	// --- Sliders count: 1 prob + 3 impact + 1 mitigation per threat = 5 × 10 = 50 ---
+	console.log('\n  Slider count');
 	const sliders = await page.$$('input[type="range"]');
-	assert(sliders.length >= 10, 'D002: At least 10 HW mitigation sliders (one per threat)');
+	assert(sliders.length >= 50, `D002: 50+ sliders rendered for 10 threats × 5 scales (got ${sliders.length})`);
 
-	assert(text.includes('HW mitigation: 100%'), 'D002: Threat 1 slider defaults to 100%');
+	assert(newText.includes('HW mitigation: 100%'), 'D002: Threat 1 HW mitigation defaults to 100%');
 
-	// --- Empty State ---
-	console.log('\n  Empty State');
-	const summaryText = await page.$eval('.summary-card', (el) => el.textContent ?? '');
-	assert(
-		summaryText.includes('Select probability and impact'),
-		'D002: Empty state prompt shows before any selections'
-	);
+	// --- Bug fix: setting probability does NOT reset HW mitigation ---
+	console.log('\n  Bug fix: HW mitigation preservation');
+	const mitBefore = (newText.match(/HW mitigation:\s*(\d+)%/g) || [])[0];
+	await page.evaluate(() => {
+		const s = [...document.querySelectorAll('input[type="range"]')].find((s) =>
+			s.getAttribute('aria-label')?.startsWith('Probability for ZDR')
+		);
+		if (s) {
+			s.value = '2';
+			s.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+	});
+	await waitMs(400);
+	const afterText = await pageText();
+	const mitAfter = (afterText.match(/HW mitigation:\s*(\d+)%/g) || [])[0];
+	assert(mitBefore === mitAfter, `D002: HW mitigation unchanged after probability change (before="${mitBefore}" after="${mitAfter}")`);
 
-	// --- Live Computation ---
-	console.log('\n  Live Computation');
-	// Select probability=Rare(2, midpoint=0.03), Monetary=Moderate(2, $5500) on threat 1
-	// HW mitigation=100%. Expected: 0.03 * 5500 * 1.0 = $165
-	await selectVal(0, '2'); // Probability: Rare
-	await selectVal(1, '2'); // Monetary: Moderate ($5,500)
-	await waitMs(300);
+	// --- Live computation via slider input event ---
+	console.log('\n  Live computation');
+	// Set threat 1 probability to Rare (index 2, midpoint 0.03), Monetary to Moderate (index 2, $5500)
+	await page.evaluate(() => {
+		const sliders = [...document.querySelectorAll('input[type="range"]')];
+		const prob = sliders.find((s) => s.getAttribute('aria-label')?.startsWith('Probability for ZDR'));
+		if (prob) {
+			prob.value = '2';
+			prob.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+		const mon = sliders.find((s) => s.getAttribute('aria-label')?.startsWith('Monetary impact for ZDR'));
+		if (mon) {
+			mon.value = '2';
+			mon.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+	});
+	await waitMs(500);
 
 	const counterText = await page.$$eval('p.muted', (els) =>
 		els.find((e) => e.textContent?.includes('of 10'))?.textContent ?? ''
 	);
-	assert(counterText.includes('1 of 10'), 'D002: Counter shows "1 of 10 threats assessed" after filling one row');
+	assert(counterText.includes('1 of 10'), `D002: Counter shows "1 of 10 threats assessed" (got "${counterText.slice(0, 80)}")`);
 
 	const summaryAfter = await page.$eval('.summary-card', (el) => el.textContent ?? '');
-	// After selecting Rare (3%) × Moderate ($5500) × 100% = $165. But prior test data may persist.
 	const hasNonZero = /\$[1-9]/.test(summaryAfter);
-	assert(hasNonZero, 'D002: Expected loss shows non-zero value after selecting probability+impact');
+	assert(hasNonZero, `D002: Expected loss shows non-zero value after selecting probability+impact`);
 
-	// --- Tier Comparison ---
+	// --- Tier comparison ---
 	console.log('\n  Tier Comparison');
 	assert(summaryAfter.includes('$984'), 'D002: Entry tier TCO ($984/yr) shown in summary');
 	assert(summaryAfter.includes('$1,680'), 'D002: Mid tier TCO ($1,680/yr) shown in summary');
 	assert(summaryAfter.includes('$2,808'), 'D002: High tier TCO ($2,808/yr) shown in summary');
 	assert(summaryAfter.includes('$4,848'), 'D002: Max tier TCO ($4,848/yr) shown in summary');
 
-	// --- Risk-Aversion Premium ---
+	// --- Risk-aversion premium ---
 	console.log('\n  Risk-Aversion Premium');
 	const premiumBtns = await page.$$eval('button.secondary', (els) =>
 		els.filter((e) => e.textContent?.includes('Risk-Aversion Premium')).length
 	);
 	assert(premiumBtns >= 1, 'D002: Risk-aversion premium section is collapsible');
 
-	// --- Completion ---
+	// --- Completion nav ---
 	console.log('\n  Completion');
 	const nextBtn = await page.$('a[href="/worksheet2"] button');
 	assert(!!nextBtn, 'D002: Proceed to W2 button available even with partial completion');
 
-	// --- Details expand ---
-	console.log('\n  Details Expand');
-	const detailsBtns = await page.$$eval('button.secondary', (els) =>
-		els.filter((e) => e.textContent?.includes('Details')).length
-	);
-	assert(detailsBtns >= 10, 'D002: Each threat has a Details expand button');
+	// --- Margin legend panel ---
+	console.log('\n  Margin legend');
+	const marginPanel = await page.$('.margin-panel');
+	assert(!!marginPanel, 'D002: Margin legend panel renders');
 }
 
 // ═══════════════════════════════════════════════════════════════════
