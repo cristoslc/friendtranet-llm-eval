@@ -18,8 +18,28 @@
 		computeMetrics,
 		personalMinimumTier,
 		resolveModelId,
-		setModelOverride
+		setModelOverride,
+		resetW3All,
+		resetW3Responses,
+		resetW3Ratings
 	} from '$lib/stores/worksheet3.svelte';
+
+	function confirmReset(scope: 'all' | 'responses' | 'ratings') {
+		const messages = {
+			all: 'Clear ALL of Worksheet 3 — conversations, tiers, model overrides, LLM responses, and your ratings. Continue?',
+			responses:
+				'Clear all LLM responses (and your ratings, since they reference the responses). Conversation and tier selections stay. You will need to re-run the evaluation. Continue?',
+			ratings:
+				'Clear all your ratings but keep the cached LLM responses. You can re-rate without paying for API calls again. Continue?'
+		};
+		if (!confirm(messages[scope])) return;
+		if (scope === 'all') resetW3All();
+		else if (scope === 'responses') resetW3Responses();
+		else resetW3Ratings();
+		showRating = false;
+		ratingConvIndex = 0;
+		ratingTurnIndex = 0;
+	}
 	import bundleData from '$lib/data/curated-conversations.json';
 	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
 
@@ -171,6 +191,37 @@
 						Combined W1+W2 {formatDollar(combined)}/yr justifies testing.
 					</p>
 				{/if}
+
+				<h3 style="margin-top: 1rem;">Reset W3</h3>
+				<div style="display: flex; flex-direction: column; gap: 0.35rem;">
+					<button
+						class="secondary"
+						style="font-size: 0.7rem; padding: 0.35rem 0.5rem; text-align: left; color: var(--color-text-muted);"
+						onclick={() => confirmReset('ratings')}
+						disabled={w3.turnRatings.length === 0}
+					>
+						Clear ratings only
+					</button>
+					<button
+						class="secondary"
+						style="font-size: 0.7rem; padding: 0.35rem 0.5rem; text-align: left; color: var(--color-text-muted);"
+						onclick={() => confirmReset('responses')}
+						disabled={Object.keys(w3.evalResults).length === 0}
+					>
+						Clear LLM responses
+					</button>
+					<button
+						class="secondary"
+						style="font-size: 0.7rem; padding: 0.35rem 0.5rem; text-align: left; color: var(--color-danger); border-color: var(--color-danger);"
+						onclick={() => confirmReset('all')}
+					>
+						Clear ALL W3 data
+					</button>
+				</div>
+				<p class="small-note" style="margin-top: 0.5rem; font-size: 0.65rem;">
+					Each scope resets your results. Ratings-only keeps cached responses so
+					re-rating is free.
+				</p>
 			</div>
 		</aside>
 

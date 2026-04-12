@@ -11,7 +11,7 @@
 
 	async function handleReset() {
 		const msg =
-			'This will delete all your worksheet answers, W3 evaluation results, ratings, and any imported group data. Your OpenRouter API key and theme preference will stay. Continue?';
+			'This will delete all your worksheet answers, W3 evaluation results, ratings, imported group data, AND your OpenRouter API key. Only your theme preference will be kept. Continue?';
 		if (!confirm(msg)) return;
 		resetting = true;
 		await resetAllData();
@@ -115,8 +115,8 @@
 						class="muted"
 						style="font-size: 0.7rem; margin-top: 0.5rem; padding: 0 0.35rem; margin-bottom: 0;"
 					>
-						Wipes worksheet answers, W3 eval results, ratings, and group imports.
-						Theme + API key stay.
+						Wipes worksheet answers, W3 eval results, ratings, group imports, and
+						API key. Only theme stays.
 					</p>
 				</div>
 			{/if}

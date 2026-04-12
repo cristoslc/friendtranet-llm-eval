@@ -1,13 +1,14 @@
 /**
- * Nuke all persisted app state — IndexedDB + session storage + localStorage.
- * Keeps the theme preference since that's UX, not assessment data.
+ * Nuke all persisted app state — IndexedDB + session storage + localStorage
+ * (including the OpenRouter API key). Only the theme preference is preserved
+ * since that's UX, not assessment data.
  */
 export async function resetAllData(): Promise<void> {
 	// Preserve theme across the wipe.
 	const savedTheme = localStorage.getItem('theme');
 
 	localStorage.clear();
-	sessionStorage.clear();
+	sessionStorage.clear(); // clears openrouter-key as well
 
 	if (savedTheme) {
 		localStorage.setItem('theme', savedTheme);

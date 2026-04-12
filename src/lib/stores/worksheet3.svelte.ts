@@ -129,6 +129,36 @@ export function setModelOverride(tierId: string, modelId: string | null) {
 	saveW3();
 }
 
+/** Full W3 reset — clears conversations, tiers, overrides, responses, ratings.
+ * Leaves only the default shape. */
+export function resetW3All() {
+	state.selectedConversations = [];
+	state.selectedTierIds = modelTiers.filter((t) => !t.isAnchor && t.defaultSelected).map((t) => t.id);
+	state.modelOverrides = {};
+	state.evalResults = {};
+	state.turnRatings = [];
+	state.evalProgress = { ...DEFAULT_PROGRESS };
+	saveW3();
+}
+
+/** Clear LLM responses and dependent ratings. Keeps conversation selection,
+ * tier selection, and model overrides so the user can re-run evaluation
+ * with the same config. Ratings are cleared because they reference
+ * now-missing response labels. */
+export function resetW3Responses() {
+	state.evalResults = {};
+	state.turnRatings = [];
+	state.evalProgress = { ...DEFAULT_PROGRESS };
+	saveW3();
+}
+
+/** Clear user ratings only. Keeps LLM responses cached so re-rating is
+ * free (no OpenRouter calls). Use this to re-rate with a clean mind. */
+export function resetW3Ratings() {
+	state.turnRatings = [];
+	saveW3();
+}
+
 export function toggleConversation(id: string) {
 	const idx = state.selectedConversations.indexOf(id);
 	if (idx >= 0) {
