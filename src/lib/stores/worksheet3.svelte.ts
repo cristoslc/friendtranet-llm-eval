@@ -159,6 +159,25 @@ export function resetW3Ratings() {
 	saveW3();
 }
 
+/** Invalidate a single pair's cached eval result so it will be re-run
+ * the next time the user triggers evaluation. Also clears any turn
+ * ratings for that conversation since the labels referenced the old
+ * responses.
+ *
+ * Returns the evaluation key that was invalidated, or null if none
+ * existed. */
+export function invalidatePair(convId: string, modelId: string): string | null {
+	const key = getEvalKey(convId, modelId);
+	if (!(key in state.evalResults)) return null;
+	const { [key]: _removed, ...rest } = state.evalResults;
+	state.evalResults = rest;
+	// Also drop ratings for this conversation — they reference models
+	// whose responses may now differ.
+	state.turnRatings = state.turnRatings.filter((r) => r.conversationId !== convId);
+	saveW3();
+	return key;
+}
+
 export function toggleConversation(id: string) {
 	const idx = state.selectedConversations.indexOf(id);
 	if (idx >= 0) {
@@ -283,7 +302,7 @@ export async function runEvaluation(
 					body: JSON.stringify({
 						model: effectiveModelId,
 						messages: [...messages],
-						max_tokens: 2048
+						max_tokens: 8192
 					}),
 					signal
 				});
@@ -315,9 +334,34 @@ export async function runEvaluation(
 				}
 
 				const data = await resp.json();
-				const content = data.choices?.[0]?.message?.content ?? '[No response]';
-				responses.push(content);
-				messages.push({ role: 'assistant', content });
+				const choice = data.choices?.[0];
+				const content = choice?.message?.content ?? '';
+				const finishReason = choice?.finish_reason ?? 'unknown';
+
+				if (!content || content.length === 0) {
+					const errMsg = `[${tier.label} / ${effectiveModelId} / ${conv.id.slice(
+						0,
+						14
+					)} turn ${turnIdx + 1}] Empty response (finish_reason: ${finishReason}).`;
+					state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
+					responses.push(`[No response — finish_reason: ${finishReason}]`);
+					messages.push({ role: 'assistant', content: '' });
+				} else {
+					// Flag truncation visibly in the stored content so the rater can see it
+					// was cut short (finish_reason === 'length' means max_tokens hit).
+					const suffix =
+						finishReason === 'length'
+							? '\n\n[⚠ Response truncated at max_tokens. Re-run this pair to get a full response.]'
+							: '';
+					responses.push(content + suffix);
+					messages.push({ role: 'assistant', content });
+					if (finishReason === 'length') {
+						state.evalProgress.errors = [
+							...state.evalProgress.errors,
+							`[${tier.label} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] Truncated at max_tokens.`
+						];
+					}
+				}
 			} catch (e) {
 				if (signal?.aborted) break;
 				const errMsg = `[${tier.label} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] ${

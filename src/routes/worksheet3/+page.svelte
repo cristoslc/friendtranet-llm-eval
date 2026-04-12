@@ -21,7 +21,8 @@
 		setModelOverride,
 		resetW3All,
 		resetW3Responses,
-		resetW3Ratings
+		resetW3Ratings,
+		invalidatePair
 	} from '$lib/stores/worksheet3.svelte';
 
 	function confirmReset(scope: 'all' | 'responses' | 'ratings') {
@@ -140,6 +141,30 @@
 			showRating = true;
 			ratingConvIndex = 0;
 			ratingTurnIndex = 0;
+		} catch (e) {
+			evalStatus = `Error: ${(e as Error).message}`;
+		}
+		abortController = null;
+	}
+
+	/**
+	 * Re-run a single (conversation × model) pair. Invalidates the cached
+	 * result, then kicks off evaluation with only that conversation selected
+	 * — the worker pool will notice all other pairs are still cached and
+	 * only re-evaluate the invalidated one.
+	 */
+	async function rerunPair(convId: string, modelId: string) {
+		if (getW3State().evalProgress.running) return;
+		invalidatePair(convId, modelId);
+		// After invalidate, turnRatings for this conversation were cleared,
+		// so the rating UI will rebuild labelOrder with current effective
+		// model IDs on the next render. Re-run just this conversation.
+		const conv = bundle.conversations.find((c) => c.id === convId);
+		if (!conv) return;
+		abortController = new AbortController();
+		try {
+			await runEvaluation([conv], (msg) => (evalStatus = msg), abortController.signal);
+			evalStatus = 'Re-run complete.';
 		} catch (e) {
 			evalStatus = `Error: ${(e as Error).message}`;
 		}
@@ -527,30 +552,61 @@
 					{#each turnRating.labelOrder as modelId, labelIdx}
 						{@const evalKey = `${currentConv.id}:${modelId}`}
 						{@const evalResult = w3.evalResults[evalKey]}
-						{@const response = evalResult?.responses[ratingTurnIndex] ?? '[No response available]'}
+						{@const response =
+							evalResult?.responses[ratingTurnIndex] ?? '[No response available]'}
+						{@const isMissing = !evalResult}
+						{@const isTruncated = response.includes('[⚠ Response truncated')}
+						{@const isEmpty = response.startsWith('[No response')}
+						{@const needsRerun = isMissing || isTruncated || isEmpty}
 						{@const currentRating = turnRating.ratings[modelId]}
 						{@const tierInfo = modelTiers.find(
 							(t) => resolveModelId(t) === modelId || t.modelId === modelId
 						)}
-						<div class="card" style="margin-bottom: 0.75rem; border-left: 4px solid var(--color-primary);">
-							<div style="display: flex; justify-content: space-between; align-items: flex-start;">
+						<div
+							class="card"
+							style="margin-bottom: 0.75rem; border-left: 4px solid {needsRerun
+								? 'var(--color-warn)'
+								: 'var(--color-primary)'};"
+						>
+							<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
 								<h3>
 									Response {labels[labelIdx]}
 									{#if turnRating.revealed && tierInfo}
-										— <span style="color: var(--color-primary);">{tierInfo.label} ({tierInfo.modelId})</span>
+										—
+										<span style="color: var(--color-primary);">
+											{tierInfo.label} ({modelId})
+										</span>
+									{/if}
+									{#if needsRerun}
+										<span class="badge warn">needs re-run</span>
 									{/if}
 								</h3>
+								<button
+									class="secondary"
+									style="font-size: 0.7rem; padding: 0.3rem 0.6rem; white-space: nowrap;"
+									onclick={() => rerunPair(currentConv.id, modelId)}
+									disabled={w3.evalProgress.running}
+									title={turnRating.revealed && tierInfo
+										? `Re-run ${tierInfo.label} against this conversation`
+										: 'Re-run this response (model identity will be preserved)'}
+								>
+									↻ re-run
+								</button>
 							</div>
-							<div style="font-size: 0.85rem; max-height: 200px; overflow-y: auto; margin: 0.5rem 0; white-space: pre-wrap;">
+							<div
+								style="font-size: 0.85rem; max-height: 240px; overflow-y: auto; margin: 0.5rem 0; white-space: pre-wrap;"
+							>
 								{response}
 							</div>
 							<div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
 								{#each [4, 3, 2, 1] as score}
 									<button
 										class:active={currentRating === score}
-										class="{currentRating === score ? 'primary' : 'secondary'}"
+										class={currentRating === score ? 'primary' : 'secondary'}
 										style="font-size: 0.75rem; padding: 0.4rem 0.75rem;"
-										onclick={() => setRating(currentConv.id, ratingTurnIndex, modelId, score)}
+										onclick={() =>
+											setRating(currentConv.id, ratingTurnIndex, modelId, score)}
+										disabled={needsRerun}
 									>
 										{score} — {ratingLabels[score]}
 									</button>
