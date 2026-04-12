@@ -19,15 +19,27 @@ export interface TurnRating {
 	revealed: boolean;
 }
 
+export interface ActivePair {
+	pairKey: string;
+	convId: string;
+	tierLabel: string;
+	modelId: string;
+	currentTurn: number;
+	currentTurnTotal: number;
+	status: string;
+}
+
 export interface EvalProgress {
 	running: boolean;
-	current: string;
 	total: number;
 	done: number;
+	active: ActivePair[];
+	errors: string[];
+	/** Legacy fields retained for export schema compatibility. */
+	current: string;
 	currentTurn: number;
 	currentTurnTotal: number;
 	lastMessage: string;
-	errors: string[];
 }
 
 export interface W3State {
@@ -44,13 +56,14 @@ export interface W3State {
 
 const DEFAULT_PROGRESS: EvalProgress = {
 	running: false,
-	current: '',
 	total: 0,
 	done: 0,
+	active: [],
+	errors: [],
+	current: '',
 	currentTurn: 0,
 	currentTurnTotal: 0,
-	lastMessage: '',
-	errors: []
+	lastMessage: ''
 };
 
 const DEFAULT_STATE: W3State = {
@@ -172,26 +185,48 @@ export async function runEvaluation(
 
 	state.evalProgress = {
 		running: true,
-		current: '',
 		total: pairs.length,
 		done: 0,
+		active: [],
+		errors: [],
+		current: '',
 		currentTurn: 0,
 		currentTurnTotal: 0,
-		lastMessage: 'Starting…',
-		errors: []
+		lastMessage: 'Starting…'
 	};
 
 	const CONCURRENCY = 4;
-	const activePairs = new Set<string>();
+
+	function addActive(pair: ActivePair) {
+		state.evalProgress.active = [...state.evalProgress.active, pair];
+	}
+
+	function updateActive(pairKey: string, patch: Partial<ActivePair>) {
+		state.evalProgress.active = state.evalProgress.active.map((p) =>
+			p.pairKey === pairKey ? { ...p, ...patch } : p
+		);
+	}
+
+	function removeActive(pairKey: string) {
+		state.evalProgress.active = state.evalProgress.active.filter((p) => p.pairKey !== pairKey);
+	}
 
 	/** Process one (conversation × tier) pair — all turns run sequentially within. */
 	async function processPair(conv: typeof conversations[0], tier: ModelTier) {
 		const effectiveModelId = resolveModelId(tier);
 		const pairKey = `${conv.id}:${effectiveModelId}`;
-		activePairs.add(pairKey);
-		state.evalProgress.current = [...activePairs].slice(-3).join(', ');
 
 		const userTurns = conv.turns.filter((t) => t.role === 'user');
+		addActive({
+			pairKey,
+			convId: conv.id,
+			tierLabel: tier.label,
+			modelId: effectiveModelId,
+			currentTurn: 0,
+			currentTurnTotal: userTurns.length,
+			status: 'starting…'
+		});
+
 		const responses: string[] = [];
 		const messages: Array<{ role: string; content: string }> = [];
 		let pairAborted = false;
@@ -199,9 +234,10 @@ export async function runEvaluation(
 		for (let turnIdx = 0; turnIdx < userTurns.length; turnIdx++) {
 			if (signal?.aborted) break;
 			const userTurn = userTurns[turnIdx];
-			state.evalProgress.lastMessage = `${tier.label} (${conv.id.slice(0, 14)}): turn ${
-				turnIdx + 1
-			}/${userTurns.length}…`;
+			updateActive(pairKey, {
+				currentTurn: turnIdx + 1,
+				status: `turn ${turnIdx + 1}/${userTurns.length} in flight`
+			});
 
 			messages.push({ role: 'user', content: userTurn.content });
 
@@ -234,6 +270,9 @@ export async function runEvaluation(
 						? `${prefix}] Not available under your OpenRouter ZDR / data-policy settings. Try a different model ID or adjust settings at https://openrouter.ai/settings/privacy.`
 						: `${prefix} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] HTTP ${resp.status}: ${errBody.slice(0, 300)}`;
 					state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
+					updateActive(pairKey, {
+						status: isZdrUnavailable ? 'ZDR unavailable — skipping' : `HTTP ${resp.status}`
+					});
 					if (isZdrUnavailable) {
 						// Abandon this entire pair — retrying other turns will just
 						// hit the same error.
@@ -275,8 +314,7 @@ export async function runEvaluation(
 			state.evalProgress.done++;
 		}
 
-		activePairs.delete(pairKey);
-		state.evalProgress.current = [...activePairs].slice(-3).join(', ') || '…';
+		removeActive(pairKey);
 	}
 
 	// Worker pool: CONCURRENCY workers pulling pairs off a shared queue.
@@ -298,6 +336,7 @@ export async function runEvaluation(
 	state.evalProgress = {
 		...state.evalProgress,
 		running: false,
+		active: [],
 		current: '',
 		currentTurn: 0,
 		currentTurnTotal: 0,

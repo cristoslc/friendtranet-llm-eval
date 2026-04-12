@@ -349,15 +349,41 @@
 					</div>
 					<p class="muted" style="margin-top: 0.5rem; font-size: 0.85rem;">
 						<strong>{w3.evalProgress.done}/{w3.evalProgress.total}</strong>
-						pairs complete &middot; {w3.evalProgress.current}
-						{#if w3.evalProgress.currentTurnTotal > 0}
-							&middot; turn {w3.evalProgress.currentTurn}/{w3.evalProgress.currentTurnTotal}
-						{/if}
-					</p>
-					<p class="muted" style="margin-top: 0.25rem; font-size: 0.75rem; font-style: italic;">
-						{w3.evalProgress.lastMessage}
+						pairs complete &middot;
+						<strong>{w3.evalProgress.active.length}</strong> in flight
 					</p>
 				</div>
+
+				<!-- Live per-worker view — one row per concurrent pair -->
+				<div style="display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.75rem;">
+					{#each w3.evalProgress.active as pair (pair.pairKey)}
+						{@const pct =
+							pair.currentTurnTotal > 0
+								? (pair.currentTurn / pair.currentTurnTotal) * 100
+								: 0}
+						<div
+							style="display: grid; grid-template-columns: 80px 1fr 90px; gap: 0.5rem; align-items: center; font-size: 0.75rem;"
+						>
+							<span style="font-weight: 600;">{pair.tierLabel}</span>
+							<div
+								style="height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden;"
+							>
+								<div
+									style="height: 100%; width: {pct}%; background: var(--color-primary); transition: width 0.2s;"
+								></div>
+							</div>
+							<span class="muted" style="font-size: 0.7rem; white-space: nowrap;">
+								{pair.convId.slice(0, 10)} · {pair.currentTurn}/{pair.currentTurnTotal}
+							</span>
+						</div>
+					{/each}
+					{#if w3.evalProgress.active.length === 0}
+						<p class="muted" style="font-style: italic; font-size: 0.75rem;">
+							Spinning up workers…
+						</p>
+					{/if}
+				</div>
+
 				<button class="secondary" onclick={cancelEvaluation}>Cancel</button>
 				{#if w3.evalProgress.errors.length > 0}
 					<div
