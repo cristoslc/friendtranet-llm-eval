@@ -13,9 +13,12 @@
 		isEvalCached,
 		runEvaluation,
 		getOrCreateTurnRating,
+		getRatedTurnCount,
+		firstUnratedTurn,
 		setRating,
 		revealTurn,
 		computeMetrics,
+		LOW_CONFIDENCE_THRESHOLD,
 		personalMinimumTier,
 		resolveModelId,
 		setModelOverride,
@@ -89,7 +92,34 @@
 			apiKey = saved;
 			keyVerified = true;
 		}
+		resumeRatingIfInProgress();
 	});
+
+	// SPEC-006 AC #4: on reload, re-enter the rating UI at the last rated turn
+	// if prior ratings exist for the current selection.
+	function resumeRatingIfInProgress() {
+		const w3 = getW3State();
+		if (w3.turnRatings.length === 0) return;
+		const selected = bundle.conversations.filter((c) =>
+			w3.selectedConversations.includes(c.id)
+		);
+		if (selected.length === 0) return;
+
+		let targetIdx = selected.length - 1;
+		for (let i = 0; i < selected.length; i++) {
+			const conv = selected[i];
+			const total = conv.turns.filter((t) => t.role === 'user').length;
+			if (getRatedTurnCount(conv.id) < total) {
+				targetIdx = i;
+				break;
+			}
+		}
+		const targetConv = selected[targetIdx];
+		const total = targetConv.turns.filter((t) => t.role === 'user').length;
+		ratingConvIndex = targetIdx;
+		ratingTurnIndex = firstUnratedTurn(targetConv.id, total);
+		showRating = true;
+	}
 
 	async function verifyKey() {
 		verifying = true;
@@ -372,6 +402,8 @@
 			{#each filteredConversations as conv}
 				{@const selected = w3.selectedConversations.includes(conv.id)}
 				{@const firstUserTurn = conv.turns.find((t) => t.role === 'user')?.content ?? ''}
+				{@const convUserTurns = conv.turns.filter((t) => t.role === 'user').length}
+				{@const convRated = getRatedTurnCount(conv.id)}
 				<label class="checkbox-card conversation-card" class:selected>
 					<input
 						type="checkbox"
@@ -391,6 +423,15 @@
 							<span>~{conv.metadata.estimatedTokens.toLocaleString()} tokens</span>
 							{#if isEvalCached(conv.id, modelTiers[0].modelId)}
 								<span class="badge go">cached</span>
+							{/if}
+							{#if convRated > 0}
+								<span
+									class="badge {convRated === convUserTurns ? 'go' : ''}"
+									data-rating-progress-conv={conv.id}
+									title="Turns rated / total user turns"
+								>
+									{convRated}/{convUserTurns} rated
+								</span>
 							{/if}
 						</div>
 					</div>
@@ -531,6 +572,40 @@
 						Conversation {ratingConvIndex + 1} of {ratedConvs.length}, Turn {ratingTurnIndex + 1} of {userTurns.length}.
 					</p>
 
+					<!-- Conversation switcher (SPEC-006 AC #1, #5) -->
+					{#if ratedConvs.length > 1}
+						<div
+							class="conv-switcher"
+							aria-label="Switch conversation"
+							style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 1rem 0; padding: 0.5rem; background: var(--color-bg); border-radius: var(--radius);"
+						>
+							<span class="muted" style="font-size: 0.7rem; align-self: center; margin-right: 0.25rem;">
+								Switch to:
+							</span>
+							{#each ratedConvs as conv, idx}
+								{@const convUserTurns = conv.turns.filter((t) => t.role === 'user').length}
+								{@const convRated = getRatedTurnCount(conv.id)}
+								{@const isCurrent = idx === ratingConvIndex}
+								<button
+									type="button"
+									class={isCurrent ? 'primary' : 'secondary'}
+									style="font-size: 0.7rem; padding: 0.25rem 0.5rem;"
+									title={conv.id}
+									data-conv-id={conv.id}
+									data-conv-rated={convRated}
+									data-conv-total={convUserTurns}
+									onclick={() => {
+										ratingConvIndex = idx;
+										ratingTurnIndex = firstUnratedTurn(conv.id, convUserTurns);
+									}}
+								>
+									{conv.id.length > 24 ? conv.id.slice(0, 24) + '…' : conv.id}
+									<span class="muted" style="margin-left: 0.35rem;">({convRated}/{convUserTurns})</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
+
 					<!-- Context -->
 					<div style="background: var(--color-bg); padding: 1rem; border-radius: var(--radius); margin: 0.75rem 0; max-height: 200px; overflow-y: auto;">
 						<div class="muted" style="font-size: 0.75rem; margin-bottom: 0.5rem;">Conversation context:</div>
@@ -655,12 +730,22 @@
 
 	<!-- Metrics -->
 	{#if hasRatings}
+		{@const selectedConvs = bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id))}
+		{@const includedConvs = selectedConvs.filter((c) => getRatedTurnCount(c.id) > 0)}
+		{@const excludedConvs = selectedConvs.filter((c) => getRatedTurnCount(c.id) === 0)}
 		<div class="card" style="margin-top: 1.5rem;">
 			<h2>Results</h2>
+			<p class="muted" style="font-size: 0.8rem;" data-coverage-summary>
+				Coverage: {includedConvs.length} of {selectedConvs.length} selected conversations contribute ratings.
+				{#if excludedConvs.length > 0}
+					{excludedConvs.length} with zero ratings are excluded from metrics.
+				{/if}
+			</p>
 			<table>
 				<thead>
 					<tr>
 						<th>Tier</th>
+						<th>Sample</th>
 						<th>Adequacy Rate</th>
 						<th>Critical Failure Rate</th>
 						<th>Meets Threshold</th>
@@ -669,17 +754,33 @@
 				<tbody>
 					{#each metrics as m}
 						{@const isMinimum = personalMinimumTier() === m.tierId}
-						<tr style="{isMinimum ? 'background: var(--color-go-light);' : ''}">
+						{@const lowConfidence = m.sampleSize > 0 && m.sampleSize < LOW_CONFIDENCE_THRESHOLD}
+						<tr
+							style="{isMinimum ? 'background: var(--color-go-light);' : ''}{lowConfidence ? ' opacity: 0.55;' : ''}"
+							data-sample-size={m.sampleSize}
+						>
 							<td style="font-weight: 500;">
 								{m.tierLabel}
 								{#if isMinimum}
 									<span class="badge go">minimum adequate</span>
 								{/if}
 							</td>
-							<td>{(m.adequacyRate * 100).toFixed(0)}%</td>
-							<td>{(m.criticalFailureRate * 100).toFixed(0)}%</td>
 							<td>
-								{#if m.meetsThreshold}
+								<span class="badge" title="Number of turn ratings for this tier" data-sample-badge={m.tierId}>
+									n={m.sampleSize}
+								</span>
+								{#if lowConfidence}
+									<span class="muted" style="font-size: 0.7rem;" title="Fewer than {LOW_CONFIDENCE_THRESHOLD} ratings">
+										low confidence
+									</span>
+								{/if}
+							</td>
+							<td>{m.sampleSize === 0 ? '—' : (m.adequacyRate * 100).toFixed(0) + '%'}</td>
+							<td>{m.sampleSize === 0 ? '—' : (m.criticalFailureRate * 100).toFixed(0) + '%'}</td>
+							<td>
+								{#if m.sampleSize === 0}
+									<span class="muted">—</span>
+								{:else if m.meetsThreshold}
 									<span class="badge go">Yes</span>
 								{:else}
 									<span class="badge skip">No</span>
