@@ -354,7 +354,8 @@
 					</p>
 				</div>
 
-				<!-- Live per-worker view — one row per concurrent pair -->
+				<!-- Live per-worker view — one row per concurrent (conv × tier) pair.
+				Same tier label can appear multiple times if different conversations are in flight. -->
 				<div style="display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.75rem;">
 					{#each w3.evalProgress.active as pair (pair.pairKey)}
 						{@const pct =
@@ -362,9 +363,16 @@
 								? (pair.currentTurn / pair.currentTurnTotal) * 100
 								: 0}
 						<div
-							style="display: grid; grid-template-columns: 80px 1fr 90px; gap: 0.5rem; align-items: center; font-size: 0.75rem;"
+							style="display: grid; grid-template-columns: 200px 1fr 70px; gap: 0.5rem; align-items: center; font-size: 0.75rem;"
 						>
-							<span style="font-weight: 600;">{pair.tierLabel}</span>
+							<span
+								style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+								title="{pair.tierLabel} × {pair.convId}"
+							>
+								<strong>{pair.tierLabel}</strong>
+								<span class="muted">×</span>
+								<span style="font-family: monospace; font-size: 0.7rem;">{pair.convId.slice(0, 12)}</span>
+							</span>
 							<div
 								style="height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden;"
 							>
@@ -372,8 +380,8 @@
 									style="height: 100%; width: {pct}%; background: var(--color-primary); transition: width 0.2s;"
 								></div>
 							</div>
-							<span class="muted" style="font-size: 0.7rem; white-space: nowrap;">
-								{pair.convId.slice(0, 10)} · {pair.currentTurn}/{pair.currentTurnTotal}
+							<span class="muted" style="font-size: 0.7rem; white-space: nowrap; text-align: right;">
+								{pair.currentTurn}/{pair.currentTurnTotal}
 							</span>
 						</div>
 					{/each}
