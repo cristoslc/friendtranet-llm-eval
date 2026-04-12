@@ -2,7 +2,7 @@
 title: "On-Demand Next-Turn Generation in W3"
 artifact: SPEC-010
 track: implementable
-status: Ready
+status: Needs Manual Test
 author: Cristos
 created: 2026-04-12
 last-updated: 2026-04-12
@@ -67,10 +67,20 @@ A rater can start an evaluation and see ratable content within a single round-tr
 
 ## Verification
 
-<!-- Populated when entering Needs Manual Test. -->
-
 | Criterion | Evidence | Result |
 |-----------|----------|--------|
+| AC1 — batch preview scoped to turn 1 | `tests/spec-010.mjs` "AC1: initial batch copy states 'turn 1 only' / 'on demand'". UI copy in `src/routes/worksheet3/+page.svelte` evaluation card. | Pass |
+| AC2 — initial batch generates turn 0 only | `tests/spec-010.mjs` "AC2: initial batch only fires turn-1 calls (messageCount=1 for all calls)". | Pass |
+| AC3 — preview shows before expansion runs | `tests/spec-010.mjs` "AC3: preview dialog includes estimated tokens and time" and "asks for explicit approval". `requestExpansion` in `+page.svelte`. | Pass |
+| AC4 — expansion replays turn N with prior-turn context | `tests/spec-010.mjs` "AC4: expansion calls prepend turn-1 context (messageCount>=3)". `expandConversationTurn` in `worksheet3.svelte.ts` via `buildReplayMessages`. | Pass |
+| AC5 — other conversations stay interactive during expansion | Switcher state is per-conversation; `isConversationExpanding(convId)` key check. `tests/spec-010.mjs` "AC5: conversation switcher is rendered" and "switcher shows per-conversation turn-generation progress". | Pass (manual: visually confirm switching while expansion is mid-flight). |
+| AC6 — control disappears after final turn | `hasMoreTurns(convId, userTurns.length)` gates the `data-testid="generate-next-turn"` button. | Pass (logic verified); manual verification of UI at last turn recommended. |
+| AC7 — cached turns restore after reload | `loadW3()` reads `evalResults` from IndexedDB; cache key is `(convId, modelId)` with `responses[turnIndex]`. `tests/spec-010.mjs` "AC7: switcher updates generated count after expansion" confirms the count source. | Pass (unit/integration); manual reload test recommended. |
+| AC8 — per-candidate retry on failure | `retryCandidateTurn` in store; `data-testid="retry-candidate"` button rendered only when a candidate is missing/empty/truncated. | Pass (logic); manual verification with a real failure scenario recommended. |
+| AC9 — preview scopes to one turn | `tests/spec-010.mjs` "AC9: preview scopes to a single turn (no bulk copy)". | Pass |
+| Unit — pure helpers | `tests/spec-010-unit.mjs`: 22 assertions over `computeGeneratedTurnCount`, `hasMoreTurnsToGenerate`, `buildReplayMessages`, `seededShuffle`, `estimateTurnTokens`. | Pass |
+| Typecheck + build | `npx svelte-check` (0 errors), `npm run build` (adapter-static build succeeds). | Pass |
+| Regression — existing W3 flow | `tests/bdd.mjs` DESIGN-004 section still passes (111/111 total). | Pass |
 
 ## Scope & Constraints
 
@@ -106,3 +116,4 @@ A rater can start an evaluation and see ratable content within a single round-tr
 | Phase | Date | Commit | Notes |
 |-------|------|--------|-------|
 | Ready | 2026-04-12 | | Initial creation. User-requested enhancement on top of SPEC-003 + SPEC-006 to move W3 generation from upfront batch to lazy per-turn expansion. |
+| Needs Manual Test | 2026-04-12 | | Implementation complete on worktree `worktree-spec-010-ondemand-turns`. Pure helpers extracted to `src/lib/stores/w3-pure.ts`; store adds `runInitialBatch`, `expandConversationTurn`, `retryCandidateTurn`, `getGeneratedTurnCount`, `hasMoreTurns`, `isConversationExpanding`. UI adds conversation switcher with generated-turn badges, per-conversation in-flight indicator, "Generate next turn" control with preview, per-candidate retry. Unit tests: 22/22. Puppeteer BDD (SPEC-010): 13/13. Existing BDD: 111/111. |

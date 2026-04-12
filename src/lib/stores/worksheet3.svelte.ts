@@ -822,6 +822,33 @@ export function revealTurn(convId: string, turnIndex: number) {
 	saveW3();
 }
 
+/** Number of turns in `convId` that have at least one candidate rating. */
+export function getRatedTurnCount(convId: string): number {
+	const rated = new Set<number>();
+	for (const tr of state.turnRatings) {
+		if (tr.conversationId === convId && Object.keys(tr.ratings).length > 0) {
+			rated.add(tr.turnIndex);
+		}
+	}
+	return rated.size;
+}
+
+/**
+ * First turn index in `convId` with no ratings. Returns `totalTurns - 1`
+ * when every turn has at least one rating (so callers can land on the
+ * last turn for review). Returns 0 when totalTurns is 0 or 1.
+ */
+export function firstUnratedTurn(convId: string, totalTurns: number): number {
+	if (totalTurns <= 0) return 0;
+	for (let i = 0; i < totalTurns; i++) {
+		const tr = state.turnRatings.find(
+			(t) => t.conversationId === convId && t.turnIndex === i
+		);
+		if (!tr || Object.keys(tr.ratings).length === 0) return i;
+	}
+	return totalTurns - 1;
+}
+
 // Metrics computation
 export interface TierMetrics {
 	tierId: string;
@@ -831,7 +858,11 @@ export interface TierMetrics {
 	criticalFailureRate: number;
 	weightedAdequacy: number;
 	meetsThreshold: boolean;
+	sampleSize: number;
 }
+
+/** Below this, metrics are rendered dimmed to signal low confidence. */
+export const LOW_CONFIDENCE_THRESHOLD = 3;
 
 export function computeMetrics(): TierMetrics[] {
 	const allTiers = modelTiers.filter(
@@ -854,7 +885,8 @@ export function computeMetrics(): TierMetrics[] {
 				adequacyRate: 0,
 				criticalFailureRate: 0,
 				weightedAdequacy: 0,
-				meetsThreshold: false
+				meetsThreshold: false,
+				sampleSize: 0
 			};
 		}
 
@@ -870,7 +902,8 @@ export function computeMetrics(): TierMetrics[] {
 			adequacyRate,
 			criticalFailureRate,
 			weightedAdequacy: adequacyRate,
-			meetsThreshold: adequacyRate >= 0.8 && criticalFailureRate <= 0.1
+			meetsThreshold: adequacyRate >= 0.8 && criticalFailureRate <= 0.1,
+			sampleSize: ratings.length
 		};
 	});
 }
