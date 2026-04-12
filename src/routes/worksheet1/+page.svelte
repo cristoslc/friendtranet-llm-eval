@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { threats, probabilityOptions, impactScales } from '$lib/data/threats';
+	import {
+		threats,
+		probabilityOptions,
+		impactScales,
+		mitigationAnchors
+	} from '$lib/data/threats';
 	import { hardwareTiers } from '$lib/data/tiers';
 	import {
 		getW1State,
@@ -163,6 +168,9 @@
 									{/if}
 								</span>
 							</div>
+							{#if level}
+								<span class="current-desc">"{level.example}"</span>
+							{/if}
 							<input
 								type="range"
 								min="-1"
@@ -333,13 +341,20 @@
 		<aside class="margin-panel">
 			{#if focusedLegend === null}
 				<h4>Legend</h4>
-				<p class="empty">Click or focus any slider to see its reference scale here.</p>
+				<p class="empty">Focus any slider to see its reference scale here.</p>
 			{:else if focusedLegend.kind === 'probability'}
-				<h4>Probability anchors</h4>
+				<h4>How likely is this?</h4>
+				<p class="legend-detail" style="margin-bottom: 0.5rem;">
+					Pick the phrase that matches your gut sense of how often this happens to someone like
+					you.
+				</p>
 				<ul>
 					{#each probabilityOptions as opt}
 						<li>
 							<span class="legend-label">{opt.label}</span>
+							<span class="muted" style="font-size: 0.7rem; margin-left: 0.35rem;">
+								(~{(opt.midpoint * 100).toFixed(opt.midpoint < 0.01 ? 2 : 1)}%/yr)
+							</span>
 							<span class="legend-detail">"{opt.description}"</span>
 						</li>
 					{/each}
@@ -347,43 +362,51 @@
 			{:else if focusedLegend.kind === 'impact'}
 				{@const fl = focusedLegend as { kind: 'impact'; scaleName: string }}
 				{@const s = impactScales.find((x) => x.name === fl.scaleName)}
-				<h4>{fl.scaleName} scale</h4>
+				<h4>{fl.scaleName}</h4>
+				{#if s}
+					<p class="legend-detail" style="margin-bottom: 0.5rem;">{s.description}</p>
+				{/if}
 				<ul>
 					{#if s}
 						{#each s.levels as lvl}
 							<li>
 								<span class="legend-label">{lvl.label}</span>
-								<span class="legend-detail">{formatDollar(lvl.dollar)}</span>
+								<span class="muted" style="font-size: 0.7rem; margin-left: 0.35rem;">
+									({formatDollar(lvl.dollar)})
+								</span>
+								<span class="legend-detail">{lvl.example}</span>
 							</li>
 						{/each}
 					{/if}
 				</ul>
-				<p class="legend-detail" style="margin-top: 0.75rem;">
-					The SPA uses the highest-severity selection across all three scales as your impact
-					value.
+				<p class="legend-detail" style="margin-top: 0.75rem; font-size: 0.75rem; opacity: 0.85;">
+					Across all three impact scales, the SPA uses whichever one you rate <em>highest</em>
+					— severity takes priority over averaging.
 				</p>
 			{:else if focusedLegend.kind === 'mitigation'}
 				{@const fl = focusedLegend as { kind: 'mitigation'; threatId: number }}
 				{@const t = threats.find((x) => x.id === fl.threatId)}
-				<h4>HW mitigation</h4>
-				<p class="legend-detail">
-					What fraction of the expected loss local hardware actually prevents for
-					<em>{t?.shortLabel}</em>.
-				</p>
-				<p class="legend-detail" style="margin-top: 0.5rem;">
-					<strong>Default: {Math.round((t?.hwPrevents ?? 0) * 100)}%</strong>
-				</p>
-				<p class="legend-detail" style="margin-top: 0.5rem;">
+				<h4>What fraction does local hardware prevent?</h4>
+				<p class="legend-detail" style="margin-bottom: 0.5rem;">
+					For <em>{t?.shortLabel}</em>, default is
+					<strong>{Math.round((t?.hwPrevents ?? 0) * 100)}%</strong>.
 					{#if t?.hwPrevents === 0}
-						This threat affects cloud and local equally — hardware provides no protection.
+						Hardware doesn't help — this threat affects cloud and local equally.
 					{:else if (t?.hwPrevents ?? 0) >= 1}
-						Hardware fully prevents this threat because the content never leaves your
-						perimeter.
+						Hardware fully closes this threat because content never leaves your perimeter.
 					{:else}
-						Hardware prevents most but not all of this threat vector. Adjust if you have a
-						different view.
+						Hardware prevents most but not all of this vector. Adjust if you have a different
+						view.
 					{/if}
 				</p>
+				<ul>
+					{#each mitigationAnchors as anchor}
+						<li>
+							<span class="legend-label">{anchor.label}</span>
+							<span class="legend-detail">{anchor.example}</span>
+						</li>
+					{/each}
+				</ul>
 			{/if}
 		</aside>
 	</div>

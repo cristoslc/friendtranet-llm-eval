@@ -517,12 +517,30 @@ textarea {
 
 .summary-card {
 	position: sticky;
-	bottom: 0;
+	bottom: 1rem;
 	z-index: 10;
 	background: var(--color-surface);
-	border-top: 2px solid var(--color-primary);
-	padding: 1rem 1.5rem;
-	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+	border: 1px solid var(--color-border);
+	border-bottom-color: var(--color-primary);
+	border-bottom-width: 3px;
+	border-radius: var(--radius);
+	padding: 1rem 1.25rem;
+	box-shadow: var(--shadow-strong);
+	/* Overflow slightly beyond the form column on the right */
+	margin-right: -2.5rem;
+	margin-top: 2rem;
+}
+
+/* In the margin layout, keep summary-card within the main column */
+.container-with-margin .summary-card {
+	margin-right: -2rem;
+}
+
+@media (max-width: 1100px) {
+	.summary-card,
+	.container-with-margin .summary-card {
+		margin-right: 0;
+	}
 }
 
 .decision-card {

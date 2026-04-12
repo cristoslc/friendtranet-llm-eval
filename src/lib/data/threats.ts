@@ -115,41 +115,147 @@ export const probabilityOptions: ProbabilityOption[] = [
 export interface ImpactLevel {
 	label: string;
 	dollar: number;
+	example: string;
 }
 
 export interface ImpactScale {
 	name: string;
+	description: string;
 	levels: ImpactLevel[];
 }
 
 export const impactScales: ImpactScale[] = [
 	{
 		name: 'Monetary',
+		description: 'Direct financial cost to recover, replace, or absorb the damage.',
 		levels: [
-			{ label: 'Negligible', dollar: 50 },
-			{ label: 'Minor', dollar: 550 },
-			{ label: 'Moderate', dollar: 5500 },
-			{ label: 'Major', dollar: 55000 },
-			{ label: 'Severe', dollar: 150000 }
+			{
+				label: 'Negligible',
+				dollar: 50,
+				example: 'The cost of a few lost subscriptions or a small fraud charge you dispute and recover.'
+			},
+			{
+				label: 'Minor',
+				dollar: 550,
+				example: 'A weekend trip you have to cancel, or a month of identity-monitoring service.'
+			},
+			{
+				label: 'Moderate',
+				dollar: 5500,
+				example: 'A major appliance replacement, a medical deductible, or a credit-freeze / legal consult cycle.'
+			},
+			{
+				label: 'Major',
+				dollar: 55000,
+				example: 'A used car or a year of mortgage payments — a setback that reshapes your budget.'
+			},
+			{
+				label: 'Severe',
+				dollar: 150000,
+				example: 'Catastrophic: a child\u2019s college fund, a down payment, or recovery from serious fraud.'
+			}
 		]
 	},
 	{
 		name: 'Psychological-relational',
+		description:
+			'Emotional and relational toll — the distress, shame, or damage to trust this would cause.',
 		levels: [
-			{ label: 'Mild discomfort', dollar: 125 },
-			{ label: 'Real distress', dollar: 1250 },
-			{ label: 'Violation', dollar: 6000 },
-			{ label: 'Betrayal', dollar: 30000 },
-			{ label: 'Trauma', dollar: 75000 }
+			{
+				label: 'Mild discomfort',
+				dollar: 125,
+				example: 'The cringe of reading your own old posts in public. Uncomfortable but forgotten in a week.'
+			},
+			{
+				label: 'Real distress',
+				dollar: 1250,
+				example: 'A few weeks of bad sleep and intrusive thoughts. You\u2019d pay to undo it.'
+			},
+			{
+				label: 'Violation',
+				dollar: 6000,
+				example: 'Like finding out someone read your journal. Months of processing; trust is shaken.'
+			},
+			{
+				label: 'Betrayal',
+				dollar: 30000,
+				example: 'A close relationship ending over it. Therapy, damaged identity, long recovery.'
+			},
+			{
+				label: 'Trauma',
+				dollar: 75000,
+				example:
+					'Years-long impact on how you relate to others. Hypervigilance, foreclosed intimacy.'
+			}
 		]
 	},
 	{
 		name: 'Third-party harm',
+		description:
+			'Harm to other people whose data flows through your AI pipeline (friends, family, clients).',
 		levels: [
-			{ label: 'None', dollar: 0 },
-			{ label: 'Minor', dollar: 1250 },
-			{ label: 'Real harm', dollar: 27500 },
-			{ label: 'Severe harm', dollar: 75000 }
+			{
+				label: 'None',
+				dollar: 0,
+				example: 'Only your own content is involved — no third parties in scope.'
+			},
+			{
+				label: 'Minor',
+				dollar: 1250,
+				example:
+					'A friend\u2019s embarrassing story gets an awkward retelling. They\u2019re annoyed, not injured.'
+			},
+			{
+				label: 'Real harm',
+				dollar: 27500,
+				example:
+					'Someone\u2019s medical, financial, or legal privacy meaningfully breached. Real consequences for them.'
+			},
+			{
+				label: 'Severe harm',
+				dollar: 75000,
+				example:
+					'Someone\u2019s safety, livelihood, or relationship actually damaged by the exposure.'
+			}
 		]
+	}
+];
+
+export interface MitigationAnchor {
+	value: number;
+	label: string;
+	example: string;
+}
+
+export const mitigationAnchors: MitigationAnchor[] = [
+	{
+		value: 0,
+		label: '0% — No protection',
+		example:
+			'Hardware doesn\u2019t help here. The threat affects cloud and local equally (e.g. supply-chain compromise).'
+	},
+	{
+		value: 0.25,
+		label: '25% — Light protection',
+		example:
+			'Some exposure paths close, but the main attack vector remains. Most metadata still leaks.'
+	},
+	{
+		value: 0.5,
+		label: '50% — Partial protection',
+		example:
+			'Content stays local, but timing, billing, or network metadata still reveal meaningful patterns.'
+	},
+	{
+		value: 0.75,
+		label: '75% — Strong protection',
+		example:
+			'Most of the threat surface gone. A determined adversary could still infer some things from side channels.'
+	},
+	{
+		value: 1.0,
+		label: '100% — Full prevention',
+		example:
+			'Content never leaves your perimeter. The threat vector is closed for local inference.'
 	}
 ];
