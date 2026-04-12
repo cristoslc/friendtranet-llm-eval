@@ -8,6 +8,12 @@ export interface EvalResult {
 	modelId: string;
 	responses: string[];
 	cachedAt: string;
+	/** Turn indices still truncated after auto-retry. Surfaces to the UI
+	 * so the rater can choose to retry manually or skip. */
+	truncatedTurns?: number[];
+	/** Turn indices the operator chose to skip. Aggregation counts these
+	 * as recorded gaps, not silent misses. */
+	skippedTurns?: number[];
 }
 
 export interface TurnRating {
@@ -118,6 +124,15 @@ function saveW3() {
 /** Resolve the effective model ID for a tier, applying user overrides. */
 export function resolveModelId(tier: ModelTier): string {
 	return state.modelOverrides[tier.id] ?? tier.modelId;
+}
+
+/** Shared default when a tier has no `maxTokens` override. */
+const DEFAULT_MAX_TOKENS = 8192;
+
+/** Resolve the effective per-request max_tokens for a tier. Falls back
+ * to the shared default when the tier has no override. */
+export function resolveMaxTokens(tier: ModelTier): number {
+	return tier.maxTokens ?? DEFAULT_MAX_TOKENS;
 }
 
 export function setModelOverride(tierId: string, modelId: string | null) {
@@ -261,7 +276,7 @@ export async function rerunPairFromTurn(
 				body: JSON.stringify({
 					model: effectiveModelId,
 					messages: [...messages],
-					max_tokens: 8192
+					max_tokens: resolveMaxTokens(tier)
 				}),
 				signal
 			});
@@ -345,8 +360,73 @@ function getEvalKey(convId: string, modelId: string): string {
 	return `${convId}:${modelId}`;
 }
 
+interface UsageLike {
+	prompt_tokens?: number;
+	completion_tokens?: number;
+	total_tokens?: number;
+	reasoning_tokens?: number;
+	completion_tokens_details?: { reasoning_tokens?: number };
+}
+
+/** Summarize the OpenRouter usage block for a truncation diagnostic.
+ * Surfaces reasoning-token consumption, which is the prime suspect when
+ * a reasoning-capable model returns empty content at finish_reason=length. */
+function summarizeUsage(usage: UsageLike, reasoningContent: string): string {
+	const parts: string[] = [];
+	if (typeof usage.prompt_tokens === 'number') parts.push(`prompt=${usage.prompt_tokens}`);
+	if (typeof usage.completion_tokens === 'number') parts.push(`completion=${usage.completion_tokens}`);
+	const reasoningTokens =
+		usage.reasoning_tokens ?? usage.completion_tokens_details?.reasoning_tokens;
+	if (typeof reasoningTokens === 'number' && reasoningTokens > 0) {
+		parts.push(`reasoning=${reasoningTokens}`);
+	}
+	if (reasoningContent && reasoningContent.length > 0) {
+		parts.push(`reasoning_chars=${reasoningContent.length}`);
+	}
+	return parts.length > 0 ? ` [${parts.join(' ')}]` : '';
+}
+
 export function isEvalCached(convId: string, modelId: string): boolean {
 	return getEvalKey(convId, modelId) in state.evalResults;
+}
+
+/** Mark a specific (conversation, model, turn) as skipped. Records the turn
+ * index in the EvalResult so the rating UI can show it as a recorded gap
+ * and aggregation can treat it as intentionally-not-rated. */
+export function skipTurnForModel(convId: string, modelId: string, turnIndex: number) {
+	const key = getEvalKey(convId, modelId);
+	const existing = state.evalResults[key];
+	if (!existing) return;
+	const skipped = new Set(existing.skippedTurns ?? []);
+	skipped.add(turnIndex);
+	state.evalResults[key] = {
+		...existing,
+		skippedTurns: Array.from(skipped).sort((a, b) => a - b)
+	};
+	saveW3();
+}
+
+/** Un-mark a skipped turn — the operator wants to try again. */
+export function unskipTurnForModel(convId: string, modelId: string, turnIndex: number) {
+	const key = getEvalKey(convId, modelId);
+	const existing = state.evalResults[key];
+	if (!existing?.skippedTurns) return;
+	const remaining = existing.skippedTurns.filter((i) => i !== turnIndex);
+	state.evalResults[key] = {
+		...existing,
+		skippedTurns: remaining.length > 0 ? remaining : undefined
+	};
+	saveW3();
+}
+
+export function isTurnSkipped(convId: string, modelId: string, turnIndex: number): boolean {
+	const key = getEvalKey(convId, modelId);
+	return !!state.evalResults[key]?.skippedTurns?.includes(turnIndex);
+}
+
+export function isTurnTruncated(convId: string, modelId: string, turnIndex: number): boolean {
+	const key = getEvalKey(convId, modelId);
+	return !!state.evalResults[key]?.truncatedTurns?.includes(turnIndex);
 }
 
 interface ConversationTurn {
@@ -420,8 +500,27 @@ export async function runEvaluation(
 		});
 
 		const responses: string[] = [];
+		const truncatedTurns: number[] = [];
 		const messages: Array<{ role: string; content: string }> = [];
 		let pairAborted = false;
+
+		async function callOnce(budget: number) {
+			return fetch('https://openrouter.ai/api/v1/chat/completions', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					'Content-Type': 'application/json',
+					'HTTP-Referer': window.location.origin,
+					'X-Title': 'Sovereignty Stack Decision SPA'
+				},
+				body: JSON.stringify({
+					model: effectiveModelId,
+					messages: [...messages],
+					max_tokens: budget
+				}),
+				signal
+			});
+		}
 
 		for (let turnIdx = 0; turnIdx < userTurns.length; turnIdx++) {
 			if (signal?.aborted) break;
@@ -434,21 +533,9 @@ export async function runEvaluation(
 			messages.push({ role: 'user', content: userTurn.content });
 
 			try {
-				const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-					method: 'POST',
-					headers: {
-						Authorization: `Bearer ${apiKey}`,
-						'Content-Type': 'application/json',
-						'HTTP-Referer': window.location.origin,
-						'X-Title': 'Sovereignty Stack Decision SPA'
-					},
-					body: JSON.stringify({
-						model: effectiveModelId,
-						messages: [...messages],
-						max_tokens: 8192
-					}),
-					signal
-				});
+				const baseBudget = resolveMaxTokens(tier);
+				let resp = await callOnce(baseBudget);
+				let attempt = 1;
 
 				if (!resp.ok) {
 					const errBody = await resp.text();
@@ -476,19 +563,47 @@ export async function runEvaluation(
 					continue;
 				}
 
-				const data = await resp.json();
-				const choice = data.choices?.[0];
-				const content = choice?.message?.content ?? '';
-				const finishReason = choice?.finish_reason ?? 'unknown';
+				let data = await resp.json();
+				let choice = data.choices?.[0];
+				let content: string = choice?.message?.content ?? '';
+				let finishReason: string = choice?.finish_reason ?? 'unknown';
+				let usage = data.usage ?? {};
+				let reasoningContent: string =
+					choice?.message?.reasoning_content ?? choice?.message?.reasoning ?? '';
+
+				// Auto-retry once with doubled budget when the turn came back
+				// empty because we hit max_tokens. Handles reasoning-heavy models
+				// (Qwen 3.5 thinking mode) that consume the budget before emitting
+				// visible content.
+				if ((!content || content.length === 0) && finishReason === 'length') {
+					const retryBudget = baseBudget * 2;
+					updateActive(pairKey, {
+						status: `turn ${turnIdx + 1}/${userTurns.length} retrying (${retryBudget} tokens)`
+					});
+					const retryResp = await callOnce(retryBudget);
+					if (retryResp.ok) {
+						attempt = 2;
+						data = await retryResp.json();
+						choice = data.choices?.[0];
+						content = choice?.message?.content ?? '';
+						finishReason = choice?.finish_reason ?? 'unknown';
+						usage = data.usage ?? {};
+						reasoningContent =
+							choice?.message?.reasoning_content ?? choice?.message?.reasoning ?? '';
+					}
+				}
 
 				if (!content || content.length === 0) {
+					const usageTag = summarizeUsage(usage, reasoningContent);
+					const attemptTag = attempt > 1 ? ` after ${attempt} attempts` : '';
 					const errMsg = `[${tier.label} / ${effectiveModelId} / ${conv.id.slice(
 						0,
 						14
-					)} turn ${turnIdx + 1}] Empty response (finish_reason: ${finishReason}).`;
+					)} turn ${turnIdx + 1}] Empty response (finish_reason: ${finishReason})${attemptTag}${usageTag}.`;
 					state.evalProgress.errors = [...state.evalProgress.errors, errMsg];
-					responses.push(`[No response — finish_reason: ${finishReason}]`);
+					responses.push(`[No response — finish_reason: ${finishReason}${attemptTag}${usageTag}]`);
 					messages.push({ role: 'assistant', content: '' });
+					truncatedTurns.push(turnIdx);
 				} else {
 					// Flag truncation visibly in the stored content so the rater can see it
 					// was cut short (finish_reason === 'length' means max_tokens hit).
@@ -499,10 +614,12 @@ export async function runEvaluation(
 					responses.push(content + suffix);
 					messages.push({ role: 'assistant', content });
 					if (finishReason === 'length') {
+						const usageTag = summarizeUsage(usage, reasoningContent);
 						state.evalProgress.errors = [
 							...state.evalProgress.errors,
-							`[${tier.label} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] Truncated at max_tokens.`
+							`[${tier.label} / ${conv.id.slice(0, 14)} turn ${turnIdx + 1}] Truncated at max_tokens${usageTag}.`
 						];
+						truncatedTurns.push(turnIdx);
 					}
 				}
 			} catch (e) {
@@ -522,7 +639,8 @@ export async function runEvaluation(
 				conversationId: conv.id,
 				modelId: effectiveModelId,
 				responses,
-				cachedAt: new Date().toISOString()
+				cachedAt: new Date().toISOString(),
+				truncatedTurns: truncatedTurns.length > 0 ? [...truncatedTurns] : undefined
 			};
 			state.evalProgress.done++;
 			saveW3();
@@ -638,6 +756,10 @@ export interface TierMetrics {
 	criticalFailureRate: number;
 	weightedAdequacy: number;
 	meetsThreshold: boolean;
+	/** Turns the operator skipped because the model produced no usable
+	 * output (e.g., empty-response length truncation). Counted across
+	 * all evaluated conversations for this tier's effective model. */
+	skippedTurns: number;
 }
 
 export function computeMetrics(): TierMetrics[] {
@@ -646,10 +768,20 @@ export function computeMetrics(): TierMetrics[] {
 	);
 
 	return allTiers.map((tier) => {
+		const effectiveModelId = resolveModelId(tier);
 		const ratings: number[] = [];
 		for (const tr of state.turnRatings) {
-			if (tr.ratings[tier.modelId] !== undefined) {
-				ratings.push(tr.ratings[tier.modelId]);
+			if (tr.ratings[effectiveModelId] !== undefined) {
+				ratings.push(tr.ratings[effectiveModelId]);
+			}
+		}
+
+		// Count skipped turns across all cached evalResults for this model.
+		let skippedTurns = 0;
+		for (const key of Object.keys(state.evalResults)) {
+			const result = state.evalResults[key];
+			if (result.modelId === effectiveModelId) {
+				skippedTurns += result.skippedTurns?.length ?? 0;
 			}
 		}
 
@@ -657,11 +789,12 @@ export function computeMetrics(): TierMetrics[] {
 			return {
 				tierId: tier.id,
 				tierLabel: tier.label,
-				modelId: tier.modelId,
+				modelId: effectiveModelId,
 				adequacyRate: 0,
 				criticalFailureRate: 0,
 				weightedAdequacy: 0,
-				meetsThreshold: false
+				meetsThreshold: false,
+				skippedTurns
 			};
 		}
 
@@ -673,12 +806,13 @@ export function computeMetrics(): TierMetrics[] {
 		return {
 			tierId: tier.id,
 			tierLabel: tier.label,
-			modelId: tier.modelId,
+			modelId: effectiveModelId,
 			adequacyRate,
 			criticalFailureRate,
 			weightedAdequacy: adequacyRate, // simplified: no frequency weights yet
 			meetsThreshold:
-				adequacyRate >= 0.8 && criticalFailureRate <= 0.1
+				adequacyRate >= 0.8 && criticalFailureRate <= 0.1,
+			skippedTurns
 		};
 	});
 }

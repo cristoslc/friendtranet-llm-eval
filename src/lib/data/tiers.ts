@@ -53,6 +53,11 @@ export interface ModelTier {
 	defaultSelected: boolean;
 	/** User-facing note about availability caveats. */
 	note?: string;
+	/** Override the shared default output budget (8192) for this model.
+	 * Use for reasoning-capable models that consume significant tokens
+	 * before emitting visible content, or for providers with non-obvious
+	 * effective caps. Omit to inherit the shared default. */
+	maxTokens?: number;
 }
 
 export const modelTiers: ModelTier[] = [
@@ -62,7 +67,8 @@ export const modelTiers: ModelTier[] = [
 		modelId: 'qwen/qwen3.5-9b',
 		isAnchor: false,
 		defaultSelected: true,
-		note: '9B dense. Fits any tier. Qwen 3.5 generation (Mar 2026).'
+		note: '9B dense. Fits any tier. Qwen 3.5 generation (Mar 2026). Reasoning-capable — bumped budget (16k) prevents empty-response truncation on long turns.',
+		maxTokens: 16384
 	},
 	{
 		id: 'small',

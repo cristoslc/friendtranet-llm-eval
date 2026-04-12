@@ -22,7 +22,11 @@
 		resetW3All,
 		resetW3Responses,
 		resetW3Ratings,
-		rerunPairFromTurn
+		rerunPairFromTurn,
+		skipTurnForModel,
+		unskipTurnForModel,
+		isTurnSkipped,
+		isTurnTruncated
 	} from '$lib/stores/worksheet3.svelte';
 
 	function confirmReset(scope: 'all' | 'responses' | 'ratings') {
@@ -555,16 +559,21 @@
 						{@const response =
 							evalResult?.responses[ratingTurnIndex] ?? '[No response available]'}
 						{@const isMissing = !evalResult}
-						{@const isTruncated = response.includes('[⚠ Response truncated')}
+						{@const isTruncated =
+							isTurnTruncated(currentConv.id, modelId, ratingTurnIndex) ||
+							response.includes('[⚠ Response truncated')}
 						{@const isEmpty = response.startsWith('[No response')}
-						{@const needsRerun = isMissing || isTruncated || isEmpty}
+						{@const isSkipped = isTurnSkipped(currentConv.id, modelId, ratingTurnIndex)}
+						{@const needsRerun = !isSkipped && (isMissing || isTruncated || isEmpty)}
 						{@const currentRating = turnRating.ratings[modelId]}
 						{@const tierInfo = modelTiers.find(
 							(t) => resolveModelId(t) === modelId || t.modelId === modelId
 						)}
 						<div
 							class="card"
-							style="margin-bottom: 0.75rem; border-left: 4px solid {needsRerun
+							style="margin-bottom: 0.75rem; border-left: 4px solid {isSkipped
+								? 'var(--color-muted, #888)'
+								: needsRerun
 								? 'var(--color-warn)'
 								: 'var(--color-primary)'};"
 						>
@@ -577,21 +586,50 @@
 											{tierInfo.label} ({modelId})
 										</span>
 									{/if}
-									{#if needsRerun}
-										<span class="badge warn">needs re-run</span>
+									{#if isSkipped}
+										<span class="badge" style="background: #888; color: white;">skipped (truncation)</span>
+									{:else if needsRerun}
+										<span class="badge warn">
+											{isTruncated ? 'truncated' : 'needs re-run'}
+										</span>
 									{/if}
 								</h3>
-								<button
-									class="secondary"
-									style="font-size: 0.7rem; padding: 0.3rem 0.6rem; white-space: nowrap;"
-									onclick={() => rerunPair(currentConv.id, modelId)}
-									disabled={w3.evalProgress.running}
-									title={turnRating.revealed && tierInfo
-										? `Re-run ${tierInfo.label} against this conversation`
-										: 'Re-run this response (model identity will be preserved)'}
-								>
-									↻ re-run
-								</button>
+								<div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
+									{#if isSkipped}
+										<button
+											class="secondary"
+											style="font-size: 0.7rem; padding: 0.3rem 0.6rem; white-space: nowrap;"
+											onclick={() =>
+												unskipTurnForModel(currentConv.id, modelId, ratingTurnIndex)}
+											title="Un-skip this turn so you can retry it"
+										>
+											↶ un-skip
+										</button>
+									{/if}
+									<button
+										class="secondary"
+										style="font-size: 0.7rem; padding: 0.3rem 0.6rem; white-space: nowrap;"
+										onclick={() => rerunPair(currentConv.id, modelId)}
+										disabled={w3.evalProgress.running}
+										title={turnRating.revealed && tierInfo
+											? `Re-run ${tierInfo.label} from this turn forward`
+											: 'Re-run this response from this turn forward (model identity preserved)'}
+									>
+										↻ re-run
+									</button>
+									{#if needsRerun}
+										<button
+											class="secondary"
+											style="font-size: 0.7rem; padding: 0.3rem 0.6rem; white-space: nowrap;"
+											onclick={() =>
+												skipTurnForModel(currentConv.id, modelId, ratingTurnIndex)}
+											disabled={w3.evalProgress.running}
+											title="Mark this turn skipped. Aggregation records it as a gap with cause, not as a rated turn."
+										>
+											⊘ skip
+										</button>
+									{/if}
+								</div>
 							</div>
 							<div
 								style="font-size: 0.85rem; max-height: 240px; overflow-y: auto; margin: 0.5rem 0; white-space: pre-wrap;"
@@ -663,6 +701,7 @@
 						<th>Tier</th>
 						<th>Adequacy Rate</th>
 						<th>Critical Failure Rate</th>
+						<th title="Turns skipped because the model produced no usable output.">Skipped</th>
 						<th>Meets Threshold</th>
 					</tr>
 				</thead>
@@ -678,6 +717,18 @@
 							</td>
 							<td>{(m.adequacyRate * 100).toFixed(0)}%</td>
 							<td>{(m.criticalFailureRate * 100).toFixed(0)}%</td>
+							<td>
+								{#if m.skippedTurns > 0}
+									<span
+										class="badge warn"
+										title="Turns skipped due to truncation or empty output. These are recorded gaps, not silent misses."
+									>
+										{m.skippedTurns}
+									</span>
+								{:else}
+									<span class="muted">0</span>
+								{/if}
+							</td>
 							<td>
 								{#if m.meetsThreshold}
 									<span class="badge go">Yes</span>
