@@ -1,4 +1,5 @@
-import { dbGet, dbSet } from './db';
+import { dbGet } from './db';
+import { schedulePersist } from './persist';
 import type { ModelTier } from '$lib/data/tiers';
 import { modelTiers } from '$lib/data/tiers';
 
@@ -56,13 +57,13 @@ export async function loadW3() {
 	loaded = true;
 }
 
-async function saveW3() {
-	await dbSet('worksheets', 'w3', JSON.parse(JSON.stringify({
+function saveW3() {
+	schedulePersist('worksheets', 'w3', $state.snapshot({
 		selectedConversations: state.selectedConversations,
 		selectedTierIds: state.selectedTierIds,
 		evalResults: state.evalResults,
 		turnRatings: state.turnRatings
-	})));
+	}));
 }
 
 export function toggleConversation(id: string) {
@@ -180,7 +181,7 @@ export async function runEvaluation(
 				cachedAt: new Date().toISOString()
 			};
 			state.evalProgress.done++;
-			await saveW3();
+			saveW3();
 		}
 	}
 

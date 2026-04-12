@@ -1,4 +1,5 @@
-import { dbGet, dbSet } from './db';
+import { dbGet } from './db';
+import { schedulePersist } from './persist';
 import { hardwareTiers } from '$lib/data/tiers';
 
 export interface W2State {
@@ -40,8 +41,8 @@ export async function loadW2() {
 	loaded = true;
 }
 
-export async function saveW2() {
-	await dbSet('worksheets', 'w2', JSON.parse(JSON.stringify(state)));
+export function saveW2() {
+	schedulePersist('worksheets', 'w2', $state.snapshot(state));
 }
 
 export function toggleCategory(id: string) {

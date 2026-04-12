@@ -1,4 +1,5 @@
-import { dbGet, dbSet } from './db';
+import { dbGet } from './db';
+import { schedulePersist } from './persist';
 
 export interface ThreatResponse {
 	probabilityIndex: number | null;
@@ -39,12 +40,12 @@ export async function loadW1() {
 	loaded = true;
 }
 
-export async function saveW1() {
-	await dbSet('worksheets', 'w1', JSON.parse(JSON.stringify({
+export function saveW1() {
+	schedulePersist('worksheets', 'w1', $state.snapshot({
 		responses: state.responses,
 		riskAversionRows: state.riskAversionRows,
 		riskAversionMultipliers: state.riskAversionMultipliers
-	})));
+	}));
 }
 
 function ensureResponse(threatId: number) {
