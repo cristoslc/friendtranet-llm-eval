@@ -95,6 +95,64 @@ medium
 3. Add a per-turn retry or skip control. Build on the existing per-pair re-run button.
 4. Store skipped turns as placeholders. Aggregation must not drop them in silence.
 
+## Retrospective
+
+**Terminal state:** Pending Complete (this retro runs before the phase transition)
+**Period:** 2026-04-12 (single-session work, ~1 hour end-to-end)
+**Related artifacts:** SPEC-009 (this spec); no parent epic.
+
+### Summary
+
+Fixed the Mini-tier truncation bug by shipping belt-and-suspenders coverage:
+per-model `max_tokens` override (qwen3.5-9b now defaults to 16384), one auto-retry
+with doubled budget on `finish_reason: length`, a per-turn skip/un-skip control
+in the W3 rating view, and a Skipped column in the metrics table. Live smoke
+against the production build proved the override rides on the OpenRouter wire
+scoped correctly per model — Mini sends 16384, Anchor stays at 8192.
+
+### Reflection
+
+**What went well.** The belt-and-suspenders decision (override *and* auto-retry
+*and* operator skip) held up: the smoke run completed without any truncation,
+validating that the override alone is sufficient for the reported conversation.
+The three mechanisms cover disjoint failure modes, so the fix is robust even
+though the exact root cause (reasoning tokens vs. provider cap vs. accumulated
+context) was never definitively isolated.
+
+**What was surprising.** Puppeteer could not hydrate the SPA against the Vite
+dev server — the dev server landed on port 5175 because ports 5173 and 5174 were
+already bound, and Vite's HMR client kept retrying 5173 and preventing `load`
+from firing cleanly. The fix was to serve the production build via `npx serve`
+on port 5180 instead of using `npm run dev`. For a single-run smoke, preview is
+simpler and avoids HMR entirely.
+
+**What would change.** The repro task (T1) was scoped as "instrument and
+reproduce," but the environment had no browser automation path to the live API
+at claim time. Most of the T1 work was code reading plus adding a
+`summarizeUsage` helper for future diagnosis. Future bug SPECs in this codebase
+that depend on a live API call should state up-front whether the repro step is
+a live run or a code-read, because TDD-style reproduction is blocked by the
+lack of a unit test harness.
+
+**Patterns observed.**
+
+- **Multiple stray dev servers cost time.** Vite dev servers from prior
+  sessions (5173, 5174 preview / dev) shifted our worktree server to 5175 and
+  broke HMR-based hydration in puppeteer. A preflight check on port 5173 at
+  test start would have caught this.
+- **Production preview is the right target for single-shot smoke.** Dev servers
+  add HMR variance that has nothing to do with the feature under test.
+- **Project lacks a unit test framework.** Without Vitest or similar, the swain
+  TDD enforcement reduces to type-check + production build. That's a real gate
+  but it doesn't catch logic regressions in the store.
+
+### Learnings captured
+
+| Item | Type | Summary |
+|------|------|---------|
+| Smoke against preview, not dev | memory (feedback) | Puppeteer smoke tests should target `npx serve build` (or preview) on a pre-checked port — dev server HMR breaks hydration when port 5173 is occupied. |
+| Unit test framework gap | memory (project) | This project has puppeteer BDD but no unit test framework. TDD cycles for store logic fall back to type-check + prod build as the gates. |
+
 ## Lifecycle
 
 | Phase | Date | Commit | Notes |
