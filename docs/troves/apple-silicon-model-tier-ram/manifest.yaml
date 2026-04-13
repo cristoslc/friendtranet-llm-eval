@@ -1,0 +1,97 @@
+id: apple-silicon-model-tier-ram
+created: 2026-04-13
+refreshed: 2026-04-13
+tags:
+  - apple-silicon
+  - mlx
+  - quantization
+  - q4_k_m
+  - unified-memory
+  - model-tier
+  - hardware-tier
+  - worksheet3
+  - openrouter
+  - multi-user
+
+default-freshness-ttl: 90d
+
+referenced-by: []
+
+sources:
+  - id: mlx-community-qwen35-9b-4bit
+    url: https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit
+    type: repository
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: eab6190534c1845f746585150c774f9564009e0342c863be1e6417623bc84b61
+    notes: "Reference for Mini tier weight size at MLX 4-bit."
+
+  - id: antekapetanovic-qwen35-35b-benchmark
+    url: https://antekapetanovic.com/blog/qwen3.5-apple-silicon-benchmark/
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: d810d4fe351ed6e13ff92a6da21f54a0fd77ba0b50e1b95d2fc5e9da93bd8e01
+    notes: "Primary benchmark source for Small tier memory + performance on M4 Max."
+
+  - id: llama-cpp-gpt-oss-guide
+    url: https://github.com/ggml-org/llama.cpp/discussions/15396
+    type: forum
+    fetched: 2026-04-13
+    freshness-ttl: 90d
+    content-hash: c9cedd4692994308c0d793c47db3f2e7cc0553713f87040fc9171140ae4fb7c0
+    notes: "Authoritative memory breakdown for Medium tier (gpt-oss-120b native MXFP4)."
+
+  - id: lmstudio-blog-gpt-oss
+    url: https://lmstudio.ai/blog/gpt-oss
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 7529bbee52bc1208430929cf50741ac8dcefd6f06c9718396852f13d7c55a387
+    notes: "Corroborates Medium tier comfortable-RAM floor (96 GB+)."
+
+  - id: macstories-qwen3-235b-benchmark
+    url: https://www.macstories.net/notes/notes-on-early-mac-studio-ai-benchmarks-with-qwen3-235b-a22b-and-qwen2-5-vl-72b/
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 365d
+    content-hash: da9f162222c987423edee76324aa49321d0e155c0a5c3647c84cebffddecc0e2
+    notes: "Reference point for High tier via Qwen3-235B-A22B measurement on M3 Ultra 512 GB."
+
+  - id: inferencerlabs-qwen35-122b-65bit
+    url: https://huggingface.co/inferencerlabs/Qwen3.5-122B-A10B-MLX-6.5bit
+    type: repository
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 71bc6e97ae95c8dcbe3ad81dcc161b22d7cdced788692a2bc3532878bfda21af
+    notes: "High-fidelity quantization reference for Large tier weight ratios."
+
+  - id: moringlabs-qwen35-122b-37bit
+    url: https://huggingface.co/MoringLabs/Qwen3.5-122B-A10B-MLX-3.7bit-VL
+    type: repository
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 4269f16efe008adeaa2b5c1dd1390e52a443a2f7356dae435444a4316098a63c
+    notes: "Aggressive mixed-precision variant showing minimum fit on Entry tier (64 GB). Off-default path."
+
+  - id: apxml-qwen35-vram-guide
+    url: https://apxml.com/posts/qwen-3-5-system-requirement-vram-guide
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 1e8c1dcd9f3f12a5702cf3d75df246a3acc855960fd885a9d61c98acea7b38b5
+    notes: "Consulted calculator page; numeric data deferred to direct community benchmarks. Stub kept for provenance."
+
+  - id: huggingface-qwen35-122b-base
+    url: https://huggingface.co/Qwen/Qwen3.5-122B-A10B
+    type: repository
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: b3365b3f2cb92c012f660866476def38de5b458ad05895fb8a2dfff381499562
+    notes: "File-size reference for 4-bit standard MLX conversion."
+
+history:
+  - event: created
+    date: 2026-04-13
+    commit: "--"
+    sources: 9
