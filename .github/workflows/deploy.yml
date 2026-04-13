@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          BASE_PATH: /friendtranet-llm-eval
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build

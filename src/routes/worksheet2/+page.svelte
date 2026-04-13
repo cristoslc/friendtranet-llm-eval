@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
 	import {
 		classifiedCategories,
 		stanceOptions,
@@ -259,9 +260,9 @@
 	</div>
 
 	<WorkflowFooter
-		prevHref="/worksheet1"
+		prevHref="{base}/worksheet1"
 		prevLabel="Risk Scorecard"
-		nextHref="/worksheet3"
+		nextHref="{base}/worksheet3"
 		nextLabel="Capability Evaluation"
 		progressLabel="Worksheet 2 of 3 — Principle Scorecard"
 		progressPct={66}

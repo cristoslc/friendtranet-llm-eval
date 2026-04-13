@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { hardwareTiers } from '$lib/data/tiers';
 	import { validateImport, type ExportData } from '$lib/stores/export';
 	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
@@ -435,9 +436,9 @@ th{background:#f5f5f5}.flag{padding:0.75rem;border-left:4px solid #d97706;backgr
 </div>
 
 <WorkflowFooter
-	prevHref="/worksheet3"
+	prevHref="{base}/worksheet3"
 	prevLabel="Capability Evaluation"
-	nextHref="/"
+	nextHref="{base}/"
 	nextLabel="Home"
 	progressLabel={members.length === 0
 		? 'Import JSONs to begin'

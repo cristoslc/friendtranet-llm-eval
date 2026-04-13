@@ -1,3 +1,7 @@
+<script lang="ts">
+	import { base } from '$app/paths';
+</script>
+
 <div class="container" style="max-width: 720px;">
 	<h1>Sovereignty Stack Decision</h1>
 	<p class="muted">Should your friend group buy local LLM inference hardware?</p>
@@ -66,13 +70,13 @@
 		<p class="muted" style="margin-bottom: 1rem;">
 			Everything stays in your browser. No backend, no analytics, no telemetry.
 		</p>
-		<a href="/worksheet1">
+		<a href="{base}/worksheet1">
 			<button class="primary" style="font-size: 1rem; padding: 0.75rem 2rem;">
 				Begin Assessment
 			</button>
 		</a>
 		<p style="margin-top: 1rem;">
-			<a href="/aggregation" style="color: var(--color-primary); font-size: 0.875rem;">
+			<a href="{base}/aggregation" style="color: var(--color-primary); font-size: 0.875rem;">
 				Or go to Group Aggregation →
 			</a>
 		</p>

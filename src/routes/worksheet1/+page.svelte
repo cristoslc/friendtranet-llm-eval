@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
 	import {
 		threats,
 		probabilityOptions,
@@ -416,9 +417,9 @@
 	</div>
 
 	<WorkflowFooter
-		prevHref="/"
+		prevHref="{base}/"
 		prevLabel="Home"
-		nextHref="/worksheet2"
+		nextHref="{base}/worksheet2"
 		nextLabel="Principle Scorecard"
 		progressLabel="Worksheet 1 of 3 — Risk Scorecard"
 		progressPct={33}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
 	import { modelTiers } from '$lib/data/tiers';
 	import { classifiedCategories } from '$lib/data/principles';
 	import { loadW1, computeTotalLoss } from '$lib/stores/worksheet1.svelte';
@@ -1079,9 +1080,9 @@
 	</div>
 
 	<WorkflowFooter
-		prevHref="/worksheet2"
+		prevHref="{base}/worksheet2"
 		prevLabel="Principle Scorecard"
-		nextHref="/aggregation"
+		nextHref="{base}/aggregation"
 		nextLabel="Group Aggregation"
 		progressLabel="Worksheet 3 of 3 — Capability Evaluation"
 		progressPct={100}
