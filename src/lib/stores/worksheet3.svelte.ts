@@ -26,6 +26,20 @@ export interface EvalResult {
 	skippedTurns?: number[];
 }
 
+/**
+ * User-authored conversation driven through the same rating pipeline
+ * as curated conversations. One active custom conversation at a time
+ * (per SPEC-007 out-of-scope). `turns` grows as the rater submits
+ * further messages, up to the 5-turn cap enforced in the UI.
+ */
+export interface CustomConversation {
+	/** Stable id derived from openingPrompt — see customIdFromPrompt. */
+	id: string;
+	openingPrompt: string;
+	turns: Array<{ role: string; content: string }>;
+	createdAt: string;
+}
+
 export interface TurnRating {
 	conversationId: string;
 	turnIndex: number;
@@ -82,6 +96,8 @@ export interface W3State {
 	/** Per-conversation in-flight expansion state. Keyed by convId.
 	 * Absence means no expansion running for that conversation. */
 	conversationExpansions: Record<string, ConversationExpansion>;
+	/** At most one active custom conversation (SPEC-007). */
+	customConversation: CustomConversation | null;
 }
 
 const DEFAULT_PROGRESS: EvalProgress = {
@@ -103,7 +119,8 @@ const DEFAULT_STATE: W3State = {
 	evalResults: {},
 	turnRatings: [],
 	evalProgress: { ...DEFAULT_PROGRESS },
-	conversationExpansions: {}
+	conversationExpansions: {},
+	customConversation: null
 };
 
 let state = $state<W3State>({ ...DEFAULT_STATE });
@@ -128,6 +145,7 @@ export async function loadW3() {
 		// If an expansion was running when the tab closed, it's lost; cached
 		// responses for any turns that saved before closure are intact.
 		state.conversationExpansions = {};
+		state.customConversation = saved.customConversation ?? null;
 	}
 	loaded = true;
 }
@@ -183,6 +201,7 @@ export function resetW3All() {
 	state.turnRatings = [];
 	state.evalProgress = { ...DEFAULT_PROGRESS };
 	state.conversationExpansions = {};
+	state.customConversation = null;
 	saveW3();
 }
 
@@ -621,6 +640,114 @@ export function toggleConversation(id: string) {
 		state.selectedConversations = [...state.selectedConversations, id];
 	}
 	saveW3();
+}
+
+// ─── Custom conversation helpers (SPEC-007) ────────────────────────────────
+
+/** Stable id for a custom conversation, derived from its opening prompt. */
+export function customIdFromPrompt(openingPrompt: string): string {
+	let hash = 0;
+	for (let i = 0; i < openingPrompt.length; i++) {
+		hash = ((hash << 5) - hash + openingPrompt.charCodeAt(i)) | 0;
+	}
+	return `custom-${Math.abs(hash).toString(36)}`;
+}
+
+/** True when the current custom conversation has any cached responses or ratings. */
+export function customHasCachedResults(): boolean {
+	const c = state.customConversation;
+	if (!c) return false;
+	for (const key of Object.keys(state.evalResults)) {
+		if (key.startsWith(`${c.id}:`)) return true;
+	}
+	for (const tr of state.turnRatings) {
+		if (tr.conversationId === c.id) return true;
+	}
+	return false;
+}
+
+/**
+ * Drop evalResults + turnRatings tied to a custom conversation id.
+ * Called when the rater confirms the "edit will wipe cached results" warning.
+ */
+export function clearCustomCache(convId: string): void {
+	const nextResults: Record<string, EvalResult> = {};
+	for (const [key, val] of Object.entries(state.evalResults)) {
+		if (!key.startsWith(`${convId}:`)) nextResults[key] = val;
+	}
+	state.evalResults = nextResults;
+	state.turnRatings = state.turnRatings.filter((tr) => tr.conversationId !== convId);
+	saveW3();
+}
+
+/**
+ * Replace the active custom conversation's opening prompt. Recomputes id,
+ * resets turns to a single user turn holding the new prompt, and preserves
+ * createdAt. Does NOT clear cache — callers should invoke clearCustomCache
+ * for the OLD id first when cached results exist.
+ */
+export function setCustomOpeningPrompt(openingPrompt: string): void {
+	const trimmed = openingPrompt;
+	const id = customIdFromPrompt(trimmed);
+	const prev = state.customConversation;
+	state.customConversation = {
+		id,
+		openingPrompt: trimmed,
+		turns: [{ role: 'user', content: trimmed }],
+		createdAt: prev?.createdAt ?? new Date().toISOString()
+	};
+	const selected = state.selectedConversations.filter((x) => !x.startsWith('custom-'));
+	state.selectedConversations = [...selected, id];
+	saveW3();
+}
+
+/** Append a turn (role 'user' or 'assistant') to the active custom conversation. */
+export function appendCustomTurn(role: 'user' | 'assistant', content: string): void {
+	if (!state.customConversation) return;
+	state.customConversation.turns = [
+		...state.customConversation.turns,
+		{ role, content }
+	];
+	saveW3();
+}
+
+/** Remove the active custom conversation and all its cached results + ratings. */
+export function deleteCustomConversation(): void {
+	const c = state.customConversation;
+	if (!c) return;
+	clearCustomCache(c.id);
+	state.customConversation = null;
+	state.selectedConversations = state.selectedConversations.filter((x) => x !== c.id);
+	saveW3();
+}
+
+/** Five rater turns max for custom conversations (SPEC-007 AC #7). */
+export const CUSTOM_TURN_CAP = 5;
+
+/**
+ * Fan out one custom-conversation turn across every active tier,
+ * in series. Wraps rerunPairFromTurn so message history is rebuilt
+ * from preserved responses. Call with turnIndex = users length - 1
+ * after appending the latest user turn.
+ */
+export async function runCustomTurn(
+	turnIndex: number,
+	onProgress: (msg: string) => void,
+	signal?: AbortSignal
+): Promise<void> {
+	const custom = state.customConversation;
+	if (!custom) throw new Error('No custom conversation to evaluate');
+	const tiers = modelTiers.filter(
+		(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
+	);
+	if (tiers.length === 0) throw new Error('No tiers selected');
+
+	for (const tier of tiers) {
+		if (signal?.aborted) break;
+		onProgress(`Generating ${tier.label} (${tiers.indexOf(tier) + 1}/${tiers.length})`);
+		await rerunPairFromTurn(custom, tier, turnIndex, signal);
+	}
+	onProgress(signal?.aborted ? 'Cancelled.' : `Turn ${turnIndex + 1} complete.`);
 }
 
 export function toggleTier(tierId: string) {
