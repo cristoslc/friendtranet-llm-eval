@@ -122,6 +122,6 @@ history:
     sources: 9
   - event: extended
     date: 2026-04-13
-    commit: "--"
+    commit: "caace58"
     sources-added: 3
     reason: "Add 128K-context KV cache architecture data + OpenRouter quantization routing docs; revise synthesis for 5-user × 128K scenario."

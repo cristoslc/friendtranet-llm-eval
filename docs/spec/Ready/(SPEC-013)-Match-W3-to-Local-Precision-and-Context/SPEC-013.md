@@ -16,7 +16,7 @@ linked-artifacts:
 depends-on-artifacts:
   - SPEC-003
 addresses: []
-trove: apple-silicon-model-tier-ram@198b2d9
+trove: apple-silicon-model-tier-ram@caace58
 swain-do: required
 ---
 
