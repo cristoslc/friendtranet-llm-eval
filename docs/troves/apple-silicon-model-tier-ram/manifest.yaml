@@ -1,6 +1,7 @@
 id: apple-silicon-model-tier-ram
 created: 2026-04-13
 refreshed: 2026-04-13
+last-event: extended-with-128k-kv-math
 tags:
   - apple-silicon
   - mlx
@@ -90,8 +91,37 @@ sources:
     content-hash: b3365b3f2cb92c012f660866476def38de5b458ad05895fb8a2dfff381499562
     notes: "File-size reference for 4-bit standard MLX conversion."
 
+  - id: kaitchup-kv-cache-small-moes
+    url: https://kaitchup.substack.com/p/the-kv-cache-of-small-moes-qwen3
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: bcb74ef03750cfb56c503653a6008b17b5560c08419a127b62c594f0b08fe663
+    notes: "Exact KV-bytes-per-token for Qwen3.5-35B-A3B (20,480) showing hybrid-attention efficiency; formula applies to the Qwen3.5 family."
+
+  - id: qwen35-9b-hf-architecture
+    url: https://huggingface.co/Qwen/Qwen3.5-9B
+    type: repository
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 48aad79690a8fac486aa8587216f40a223d1d7e68cafd3ff58248db3ff19943c
+    notes: "Qwen3.5-9B hybrid attention architecture (8 full-attention layers of 32); derives 32,768 bytes/token KV cost."
+
+  - id: openrouter-provider-routing
+    url: https://openrouter.ai/docs/guides/routing/provider-selection
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 90d
+    content-hash: 7db30c84fa6d1658752533974b14378e10b33b06362c221498c6eefd4f949dbd
+    notes: "OpenRouter quantization-filter parameter documentation; basis for SPEC-013."
+
 history:
   - event: created
     date: 2026-04-13
     commit: "198b2d9"
     sources: 9
+  - event: extended
+    date: 2026-04-13
+    commit: "--"
+    sources-added: 3
+    reason: "Add 128K-context KV cache architecture data + OpenRouter quantization routing docs; revise synthesis for 5-user × 128K scenario."
