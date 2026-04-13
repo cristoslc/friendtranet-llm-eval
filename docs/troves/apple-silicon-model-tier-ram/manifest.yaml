@@ -175,6 +175,6 @@ history:
     reason: "Add 128K-context KV cache architecture data + OpenRouter quantization routing docs; revise synthesis for 5-user × 128K scenario."
   - event: extended
     date: 2026-04-13
-    commit: "--"
+    commit: "d681e07"
     sources-added: 6
     reason: "Cross-family alternatives per tier (Gemma 4 family, gpt-oss-20b, Llama 4 Scout). Synthesis now maps each tier (Mini→Large) with primary + alternative model options. Frontier models (GLM, Llama 4 Maverick) ruled out per operator decision; 2-bit quantization off-table."
