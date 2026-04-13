@@ -10,12 +10,20 @@
 		isW3Loaded,
 		toggleConversation,
 		toggleTier,
-		isEvalCached,
-		runEvaluation,
+		runInitialBatch,
+		expandConversationTurn,
+		retryCandidateTurn,
+		getGeneratedTurnCount,
+		hasMoreTurns,
+		isConversationExpanding,
+		getConversationExpansion,
 		getOrCreateTurnRating,
+		getRatedTurnCount,
+		firstUnratedTurn,
 		setRating,
 		revealTurn,
 		computeMetrics,
+		LOW_CONFIDENCE_THRESHOLD,
 		personalMinimumTier,
 		resolveModelId,
 		setModelOverride,
@@ -93,7 +101,34 @@
 			apiKey = saved;
 			keyVerified = true;
 		}
+		resumeRatingIfInProgress();
 	});
+
+	// SPEC-006 AC #4: on reload, re-enter the rating UI at the last rated turn
+	// if prior ratings exist for the current selection.
+	function resumeRatingIfInProgress() {
+		const w3 = getW3State();
+		if (w3.turnRatings.length === 0) return;
+		const selected = bundle.conversations.filter((c) =>
+			w3.selectedConversations.includes(c.id)
+		);
+		if (selected.length === 0) return;
+
+		let targetIdx = selected.length - 1;
+		for (let i = 0; i < selected.length; i++) {
+			const conv = selected[i];
+			const total = conv.turns.filter((t) => t.role === 'user').length;
+			if (getRatedTurnCount(conv.id) < total) {
+				targetIdx = i;
+				break;
+			}
+		}
+		const targetConv = selected[targetIdx];
+		const total = targetConv.turns.filter((t) => t.role === 'user').length;
+		ratingConvIndex = targetIdx;
+		ratingTurnIndex = firstUnratedTurn(targetConv.id, total);
+		showRating = true;
+	}
 
 	async function verifyKey() {
 		verifying = true;
@@ -138,10 +173,11 @@
 		if (selected.length === 0) return;
 
 		abortController = new AbortController();
-		evalStatus = 'Starting evaluation...';
+		evalStatus = 'Starting initial batch (turn 1 only)…';
 		try {
-			await runEvaluation(selected, (msg) => (evalStatus = msg), abortController.signal);
-			evalStatus = 'Evaluation complete.';
+			await runInitialBatch(selected, (msg: string) => (evalStatus = msg), abortController.signal);
+			evalStatus =
+				'Initial batch complete. Open a conversation and click "Generate next turn" to go deeper.';
 			showRating = true;
 			ratingConvIndex = 0;
 			ratingTurnIndex = 0;
@@ -149,6 +185,67 @@
 			evalStatus = `Error: ${(e as Error).message}`;
 		}
 		abortController = null;
+	}
+
+	/** Expansion preview + launch. Runs in the background — rater stays on
+	 * the current conversation or can switch away. */
+	let expansionStatus = $state('');
+
+	async function requestExpansion(convId: string) {
+		const w3 = getW3State();
+		const conv = bundle.conversations.find((c) => c.id === convId);
+		if (!conv) return;
+		if (isConversationExpanding(convId)) return;
+
+		const userTurns = conv.turns.filter((t) => t.role === 'user');
+		const nextTurnIdx = getGeneratedTurnCount(convId);
+		if (nextTurnIdx >= userTurns.length) return;
+
+		const activeTiers = modelTiers.filter(
+			(t) => w3.selectedTierIds.includes(t.id) || t.isAnchor
+		);
+		const turnText = userTurns[nextTurnIdx].content ?? '';
+		const estTokens = Math.max(100, Math.round(turnText.length / 4) + 500) * activeTiers.length;
+		const ok = confirm(
+			`Generate turn ${nextTurnIdx + 1} of ${userTurns.length} for this conversation across ${
+				activeTiers.length
+			} tier${activeTiers.length === 1 ? '' : 's'}.\n\n` +
+				`Estimated tokens: ~${estTokens.toLocaleString()}\n` +
+				`Estimated time: ~${Math.max(5, activeTiers.length * 5)} seconds\n\n` +
+				`This will hit the OpenRouter API. Continue?`
+		);
+		if (!ok) return;
+
+		const expansionAbort = new AbortController();
+		expansionStatus = `Generating turn ${nextTurnIdx + 1} for ${conv.id.slice(0, 14)}…`;
+		try {
+			await expandConversationTurn(
+				conv,
+				(msg: string) => (expansionStatus = msg),
+				expansionAbort.signal
+			);
+			expansionStatus = `Turn ${nextTurnIdx + 1} generated.`;
+		} catch (e) {
+			expansionStatus = `Error: ${(e as Error).message}`;
+		}
+	}
+
+	async function retryCandidate(convId: string, modelId: string, turnIndex: number) {
+		const conv = bundle.conversations.find((c) => c.id === convId);
+		if (!conv) return;
+		const tier = modelTiers.find((t) => resolveModelId(t) === modelId || t.modelId === modelId);
+		if (!tier) return;
+		const ctrl = new AbortController();
+		try {
+			const result = await retryCandidateTurn(conv, tier, turnIndex, ctrl.signal);
+			if (result === 'ok') {
+				evalStatus = `Retry succeeded for ${tier.label} turn ${turnIndex + 1}.`;
+			} else if (result === 'failed') {
+				evalStatus = `Retry failed for ${tier.label} turn ${turnIndex + 1}. See errors list.`;
+			}
+		} catch (e) {
+			evalStatus = `Error: ${(e as Error).message}`;
+		}
 	}
 
 	/**
@@ -376,6 +473,8 @@
 			{#each filteredConversations as conv}
 				{@const selected = w3.selectedConversations.includes(conv.id)}
 				{@const firstUserTurn = conv.turns.find((t) => t.role === 'user')?.content ?? ''}
+				{@const convUserTurns = conv.turns.filter((t) => t.role === 'user').length}
+				{@const convRated = getRatedTurnCount(conv.id)}
 				<label class="checkbox-card conversation-card" class:selected>
 					<input
 						type="checkbox"
@@ -393,8 +492,19 @@
 							</span>
 							<span>{conv.metadata.turnCount} turns</span>
 							<span>~{conv.metadata.estimatedTokens.toLocaleString()} tokens</span>
-							{#if isEvalCached(conv.id, modelTiers[0].modelId)}
-								<span class="badge go">cached</span>
+							{#if getGeneratedTurnCount(conv.id) > 0}
+								<span class="badge go">
+									{getGeneratedTurnCount(conv.id)}/{conv.turns.filter((t) => t.role === 'user').length} turns generated
+								</span>
+							{/if}
+							{#if convRated > 0}
+								<span
+									class="badge {convRated === convUserTurns ? 'go' : ''}"
+									data-rating-progress-conv={conv.id}
+									title="Turns rated / total user turns"
+								>
+									{convRated}/{convUserTurns} rated
+								</span>
 							{/if}
 						</div>
 					</div>
@@ -407,14 +517,28 @@
 	{#if w3.selectedConversations.length > 0 && keyVerified}
 		{@const selectedConvs = bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id))}
 		{@const activeTiers = modelTiers.filter((t) => w3.selectedTierIds.includes(t.id) || t.isAnchor)}
-		{@const uncachedPairs = selectedConvs.flatMap((c) => activeTiers.filter((t) => !isEvalCached(c.id, t.modelId)).map((t) => ({ c, t })))}
-		{@const estTokens = selectedConvs.reduce((s, c) => s + c.metadata.estimatedTokens, 0) * activeTiers.length}
+		{@const pairsNeedingTurn1 = selectedConvs.flatMap((c) =>
+			activeTiers
+				.filter((t) => {
+					const key = `${c.id}:${resolveModelId(t)}`;
+					const existing = w3.evalResults[key];
+					return !existing || existing.responses.length === 0;
+				})
+				.map((t) => ({ c, t }))
+		)}
+		{@const turn1Tokens = selectedConvs.reduce((s, c) => {
+			const first = c.turns.find((t) => t.role === 'user')?.content ?? '';
+			return s + Math.max(100, Math.round(first.length / 4) + 500);
+		}, 0) * activeTiers.length}
 		<div class="card">
 			<h2>Evaluation</h2>
 			<p class="muted">
 				{selectedConvs.length} conversations × {activeTiers.length} tiers.
-				{uncachedPairs.length > 0 ? `${uncachedPairs.length} uncached pairs to evaluate.` : 'All results cached.'}
-				Estimated tokens: ~{estTokens.toLocaleString()}.
+				{pairsNeedingTurn1.length > 0
+					? `${pairsNeedingTurn1.length} pairs need turn 1.`
+					: 'Turn 1 already generated for all pairs.'}
+				Generating turn 1 only — later turns are generated on demand per conversation.
+				Estimated tokens: ~{turn1Tokens.toLocaleString()}.
 			</p>
 			{#if w3.evalProgress.running}
 				<div style="margin: 0.75rem 0;">
@@ -487,12 +611,12 @@
 					</div>
 				{/if}
 			{:else}
-				{#if uncachedPairs.length > 0}
-					<button class="primary" onclick={startEvaluation} style="margin-top: 0.5rem;">
-						Start Evaluation ({uncachedPairs.length} API calls)
+				{#if pairsNeedingTurn1.length > 0}
+					<button class="primary" data-testid="start-evaluation" onclick={startEvaluation} style="margin-top: 0.5rem;">
+						Start Evaluation ({pairsNeedingTurn1.length} turn-1 API calls)
 					</button>
 				{:else}
-					<p class="muted" style="margin-top: 0.5rem;">All conversations already evaluated. Proceed to rating.</p>
+					<p class="muted" style="margin-top: 0.5rem;">Turn 1 is ready for every selected conversation. Proceed to rating — request additional turns per conversation as needed.</p>
 					<button class="primary" onclick={() => { showRating = true; ratingConvIndex = 0; ratingTurnIndex = 0; }} style="margin-top: 0.5rem;">
 						Start Rating
 					</button>
@@ -526,19 +650,116 @@
 		{#if ratedConvs.length > 0}
 			{@const currentConv = ratedConvs[ratingConvIndex]}
 			{@const userTurns = currentConv.turns.filter((t) => t.role === 'user')}
-			{#if ratingTurnIndex < userTurns.length}
-				{@const turnRating = getOrCreateTurnRating(currentConv.id, ratingTurnIndex)}
-				{@const activeTiers = modelTiers.filter((t) => w3.selectedTierIds.includes(t.id) || t.isAnchor)}
+			{@const generatedForConv = getGeneratedTurnCount(currentConv.id)}
+			{@const safeTurnIndex = Math.min(ratingTurnIndex, Math.max(0, generatedForConv - 1))}
+			{@const convExpanding = isConversationExpanding(currentConv.id)}
+			{@const convExpansion = getConversationExpansion(currentConv.id)}
+			<!-- Conversation switcher with per-conv turn-generation progress.
+			Raters can jump between conversations while one is expanding. -->
+			<div class="card" style="margin-top: 1.5rem;" data-testid="conversation-switcher">
+				<h2>Conversations</h2>
+				<p class="muted">
+					Jump between conversations to rate across the pool. Turn generation is on demand per conversation.
+				</p>
+				<div style="display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.5rem;">
+					{#each ratedConvs as rc, idx}
+						{@const rcTurns = rc.turns.filter((t) => t.role === 'user').length}
+						{@const rcGenerated = getGeneratedTurnCount(rc.id)}
+						{@const rcExpanding = isConversationExpanding(rc.id)}
+						{@const isCurrent = idx === ratingConvIndex}
+						<button
+							class={isCurrent ? 'primary' : 'secondary'}
+							data-testid="switcher-row"
+							data-conv-id={rc.id}
+							style="font-size: 0.75rem; padding: 0.4rem 0.6rem; text-align: left; display: flex; gap: 0.5rem; align-items: center;"
+							onclick={() => { ratingConvIndex = idx; ratingTurnIndex = 0; }}
+						>
+							<span style="font-family: monospace; font-size: 0.7rem; flex: 0 0 auto;">{rc.id.slice(0, 14)}</span>
+							<span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+								{rc.summary ?? rc.id}
+							</span>
+							<span class="badge {rcGenerated > 0 ? 'go' : 'skip'}" data-testid="generated-count">
+								{rcGenerated}/{rcTurns} generated
+							</span>
+							{#if rcExpanding}
+								<span class="badge warn" data-testid="expanding-indicator">
+									generating turn {(getConversationExpansion(rc.id)?.turnIndex ?? 0) + 1}…
+								</span>
+							{/if}
+						</button>
+					{/each}
+				</div>
+			</div>
+
+			{#if generatedForConv === 0}
 				<div class="card" style="margin-top: 1.5rem;">
 					<h2>Blind Rating</h2>
 					<p class="muted">
-						Conversation {ratingConvIndex + 1} of {ratedConvs.length}, Turn {ratingTurnIndex + 1} of {userTurns.length}.
+						Turn 1 hasn't been generated for this conversation yet. Start the initial batch from the Evaluation section above, or pick a different conversation from the switcher.
 					</p>
+				</div>
+			{:else}
+			{@const turnRating = getOrCreateTurnRating(currentConv.id, safeTurnIndex)}
+			{@const activeTiers = modelTiers.filter((t) => w3.selectedTierIds.includes(t.id) || t.isAnchor)}
+			{@const atLastGeneratedTurn = safeTurnIndex >= generatedForConv - 1}
+			{@const canExpand = hasMoreTurns(currentConv.id, userTurns.length)}
+				<div class="card" style="margin-top: 1.5rem;">
+					<h2>Blind Rating</h2>
+					<p class="muted">
+						Conversation {ratingConvIndex + 1} of {ratedConvs.length}, Turn {safeTurnIndex + 1}
+						of {userTurns.length} — {generatedForConv} of {userTurns.length} turns generated.
+					</p>
+					{#if convExpanding && convExpansion}
+						<div class="flag-card" data-testid="inflight-banner" style="margin-top: 0.5rem;">
+							<strong>Generating turn {convExpansion.turnIndex + 1}…</strong>
+							<div style="font-size: 0.75rem; margin-top: 0.3rem;">
+								{#each convExpansion.tierProgress as tp}
+									<span style="margin-right: 0.5rem;">
+										{tp.tierLabel}: <em>{tp.status}</em>
+									</span>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Conversation switcher (SPEC-006 AC #1, #5) -->
+					{#if ratedConvs.length > 1}
+						<div
+							class="conv-switcher"
+							aria-label="Switch conversation"
+							style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 1rem 0; padding: 0.5rem; background: var(--color-bg); border-radius: var(--radius);"
+						>
+							<span class="muted" style="font-size: 0.7rem; align-self: center; margin-right: 0.25rem;">
+								Switch to:
+							</span>
+							{#each ratedConvs as conv, idx}
+								{@const convUserTurns = conv.turns.filter((t) => t.role === 'user').length}
+								{@const convRated = getRatedTurnCount(conv.id)}
+								{@const isCurrent = idx === ratingConvIndex}
+								<button
+									type="button"
+									class={isCurrent ? 'primary' : 'secondary'}
+									style="font-size: 0.7rem; padding: 0.25rem 0.5rem;"
+									title={conv.id}
+									data-conv-id={conv.id}
+									data-conv-rated={convRated}
+									data-conv-total={convUserTurns}
+									onclick={() => {
+										ratingConvIndex = idx;
+										ratingTurnIndex = firstUnratedTurn(conv.id, convUserTurns);
+									}}
+								>
+									{conv.id.length > 24 ? conv.id.slice(0, 24) + '…' : conv.id}
+									<span class="muted" style="margin-left: 0.35rem;">({convRated}/{convUserTurns})</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
 
 					<!-- Context -->
 					<div style="background: var(--color-bg); padding: 1rem; border-radius: var(--radius); margin: 0.75rem 0; max-height: 200px; overflow-y: auto;">
 						<div class="muted" style="font-size: 0.75rem; margin-bottom: 0.5rem;">Conversation context:</div>
-						{#each currentConv.turns.slice(0, ratingTurnIndex * 2 + 1) as turn}
+						{#each currentConv.turns.slice(0, safeTurnIndex * 2 + 1) as turn}
 							<div style="margin-bottom: 0.5rem; padding: 0.5rem; border-radius: var(--radius); background: {turn.role === 'user' ? 'var(--color-primary-light)' : 'var(--color-surface)'};">
 								<span class="muted" style="font-size: 0.7rem; text-transform: uppercase;">{turn.role}</span>
 								<p style="font-size: 0.85rem; margin: 0;">{turn.content.slice(0, 300)}{turn.content.length > 300 ? '...' : ''}</p>
@@ -549,7 +770,7 @@
 					<!-- User prompt for this turn -->
 					<div style="padding: 0.75rem; background: var(--color-primary-light); border-radius: var(--radius); margin-bottom: 1rem;">
 						<span class="muted" style="font-size: 0.7rem;">USER PROMPT</span>
-						<p style="margin: 0; font-size: 0.9rem;">{userTurns[ratingTurnIndex].content}</p>
+						<p style="margin: 0; font-size: 0.9rem;">{userTurns[safeTurnIndex].content}</p>
 					</div>
 
 					<!-- Candidate responses -->
@@ -557,13 +778,13 @@
 						{@const evalKey = `${currentConv.id}:${modelId}`}
 						{@const evalResult = w3.evalResults[evalKey]}
 						{@const response =
-							evalResult?.responses[ratingTurnIndex] ?? '[No response available]'}
+							evalResult?.responses[safeTurnIndex] ?? '[No response available]'}
 						{@const isMissing = !evalResult}
 						{@const isTruncated =
-							isTurnTruncated(currentConv.id, modelId, ratingTurnIndex) ||
+							isTurnTruncated(currentConv.id, modelId, safeTurnIndex) ||
 							response.includes('[⚠ Response truncated')}
 						{@const isEmpty = response.startsWith('[No response')}
-						{@const isSkipped = isTurnSkipped(currentConv.id, modelId, ratingTurnIndex)}
+						{@const isSkipped = isTurnSkipped(currentConv.id, modelId, safeTurnIndex)}
 						{@const needsRerun = !isSkipped && (isMissing || isTruncated || isEmpty)}
 						{@const currentRating = turnRating.ratings[modelId]}
 						{@const tierInfo = modelTiers.find(
@@ -594,16 +815,28 @@
 										</span>
 									{/if}
 								</h3>
-								<div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
+								<div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
 									{#if isSkipped}
 										<button
 											class="secondary"
 											style="font-size: 0.7rem; padding: 0.3rem 0.6rem; white-space: nowrap;"
 											onclick={() =>
-												unskipTurnForModel(currentConv.id, modelId, ratingTurnIndex)}
+												unskipTurnForModel(currentConv.id, modelId, safeTurnIndex)}
 											title="Un-skip this turn so you can retry it"
 										>
 											↶ un-skip
+										</button>
+									{/if}
+									{#if needsRerun && tierInfo}
+										<button
+											class="secondary"
+											data-testid="retry-candidate"
+											style="font-size: 0.7rem; padding: 0.3rem 0.6rem; white-space: nowrap;"
+											onclick={() => retryCandidate(currentConv.id, modelId, safeTurnIndex)}
+											disabled={w3.evalProgress.running}
+											title="Retry just this candidate — other candidates keep their responses"
+										>
+											↻ retry this candidate
 										</button>
 									{/if}
 									<button
@@ -612,17 +845,17 @@
 										onclick={() => rerunPair(currentConv.id, modelId)}
 										disabled={w3.evalProgress.running}
 										title={turnRating.revealed && tierInfo
-											? `Re-run ${tierInfo.label} from this turn forward`
-											: 'Re-run this response from this turn forward (model identity preserved)'}
+											? `Re-run ${tierInfo.label} against this conversation`
+											: 'Re-run this response (model identity will be preserved)'}
 									>
-										↻ re-run
+										↻ re-run from here
 									</button>
 									{#if needsRerun}
 										<button
 											class="secondary"
 											style="font-size: 0.7rem; padding: 0.3rem 0.6rem; white-space: nowrap;"
 											onclick={() =>
-												skipTurnForModel(currentConv.id, modelId, ratingTurnIndex)}
+												skipTurnForModel(currentConv.id, modelId, safeTurnIndex)}
 											disabled={w3.evalProgress.running}
 											title="Mark this turn skipped. Aggregation records it as a gap with cause, not as a rated turn."
 										>
@@ -643,8 +876,8 @@
 										class={currentRating === score ? 'primary' : 'secondary'}
 										style="font-size: 0.75rem; padding: 0.4rem 0.75rem;"
 										onclick={() =>
-											setRating(currentConv.id, ratingTurnIndex, modelId, score)}
-										disabled={needsRerun}
+											setRating(currentConv.id, safeTurnIndex, modelId, score)}
+										disabled={needsRerun || isSkipped}
 									>
 										{score} — {ratingLabels[score]}
 									</button>
@@ -655,26 +888,40 @@
 
 					<!-- Navigation -->
 					<div style="display: flex; justify-content: space-between; margin-top: 1rem;">
-						<button class="secondary" disabled={ratingTurnIndex === 0 && ratingConvIndex === 0} onclick={() => {
+						<button class="secondary" disabled={safeTurnIndex === 0 && ratingConvIndex === 0} onclick={() => {
 							if (ratingTurnIndex > 0) {
-								ratingTurnIndex--;
+								ratingTurnIndex = Math.max(0, safeTurnIndex - 1);
 							} else if (ratingConvIndex > 0) {
 								ratingConvIndex--;
 								const prevConv = ratedConvs[ratingConvIndex];
-								ratingTurnIndex = prevConv.turns.filter((t) => t.role === 'user').length - 1;
+								const prevGen = getGeneratedTurnCount(prevConv.id);
+								ratingTurnIndex = Math.max(0, prevGen - 1);
 							}
 						}}>
 							← Previous
 						</button>
-						<div style="display: flex; gap: 0.5rem;">
+						<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end;">
+							{#if atLastGeneratedTurn && canExpand}
+								<button
+									class="secondary"
+									data-testid="generate-next-turn"
+									disabled={convExpanding}
+									onclick={() => requestExpansion(currentConv.id)}
+									title={convExpanding
+										? 'A next-turn generation is already in flight for this conversation.'
+										: 'Generate the next turn for this conversation. Shows a preview before any API calls.'}
+								>
+									{convExpanding ? 'Generating…' : 'Generate next turn'}
+								</button>
+							{/if}
 							{#if !turnRating.revealed && turnRating.labelOrder.every((m) => turnRating.ratings[m] !== undefined)}
-								<button class="secondary" onclick={() => revealTurn(currentConv.id, ratingTurnIndex)}>
+								<button class="secondary" onclick={() => revealTurn(currentConv.id, safeTurnIndex)}>
 									Reveal Models
 								</button>
 							{/if}
-							<button class="primary" disabled={!turnRating.labelOrder.every((m) => turnRating.ratings[m] !== undefined)} onclick={() => {
-								if (ratingTurnIndex < userTurns.length - 1) {
-									ratingTurnIndex++;
+							<button class="primary" disabled={!turnRating.labelOrder.every((m) => turnRating.ratings[m] !== undefined) || (atLastGeneratedTurn && canExpand)} onclick={() => {
+								if (safeTurnIndex < generatedForConv - 1 && safeTurnIndex < userTurns.length - 1) {
+									ratingTurnIndex = safeTurnIndex + 1;
 								} else if (ratingConvIndex < ratedConvs.length - 1) {
 									ratingConvIndex++;
 									ratingTurnIndex = 0;
@@ -682,10 +929,17 @@
 									showRating = false;
 								}
 							}}>
-								{ratingTurnIndex < userTurns.length - 1 ? 'Next Turn →' : ratingConvIndex < ratedConvs.length - 1 ? 'Next Conversation →' : 'Finish Rating'}
+								{safeTurnIndex < generatedForConv - 1 && safeTurnIndex < userTurns.length - 1
+									? 'Next Turn →'
+									: ratingConvIndex < ratedConvs.length - 1
+										? 'Next Conversation →'
+										: 'Finish Rating'}
 							</button>
 						</div>
 					</div>
+					{#if expansionStatus}
+						<p class="muted" data-testid="expansion-status" style="margin-top: 0.5rem; font-size: 0.8rem;">{expansionStatus}</p>
+					{/if}
 				</div>
 			{/if}
 		{/if}
@@ -693,30 +947,54 @@
 
 	<!-- Metrics -->
 	{#if hasRatings}
+		{@const selectedConvs = bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id))}
+		{@const includedConvs = selectedConvs.filter((c) => getRatedTurnCount(c.id) > 0)}
+		{@const excludedConvs = selectedConvs.filter((c) => getRatedTurnCount(c.id) === 0)}
 		<div class="card" style="margin-top: 1.5rem;">
 			<h2>Results</h2>
+			<p class="muted" style="font-size: 0.8rem;" data-coverage-summary>
+				Coverage: {includedConvs.length} of {selectedConvs.length} selected conversations contribute ratings.
+				{#if excludedConvs.length > 0}
+					{excludedConvs.length} with zero ratings are excluded from metrics.
+				{/if}
+			</p>
 			<table>
 				<thead>
 					<tr>
 						<th>Tier</th>
+						<th>Sample</th>
 						<th>Adequacy Rate</th>
 						<th>Critical Failure Rate</th>
-						<th title="Turns skipped because the model produced no usable output.">Skipped</th>
+						<th title="Turns the operator skipped because the model produced no usable output.">Skipped</th>
 						<th>Meets Threshold</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each metrics as m}
 						{@const isMinimum = personalMinimumTier() === m.tierId}
-						<tr style="{isMinimum ? 'background: var(--color-go-light);' : ''}">
+						{@const lowConfidence = m.sampleSize > 0 && m.sampleSize < LOW_CONFIDENCE_THRESHOLD}
+						<tr
+							style="{isMinimum ? 'background: var(--color-go-light);' : ''}{lowConfidence ? ' opacity: 0.55;' : ''}"
+							data-sample-size={m.sampleSize}
+						>
 							<td style="font-weight: 500;">
 								{m.tierLabel}
 								{#if isMinimum}
 									<span class="badge go">minimum adequate</span>
 								{/if}
 							</td>
-							<td>{(m.adequacyRate * 100).toFixed(0)}%</td>
-							<td>{(m.criticalFailureRate * 100).toFixed(0)}%</td>
+							<td>
+								<span class="badge" title="Number of turn ratings for this tier" data-sample-badge={m.tierId}>
+									n={m.sampleSize}
+								</span>
+								{#if lowConfidence}
+									<span class="muted" style="font-size: 0.7rem;" title="Fewer than {LOW_CONFIDENCE_THRESHOLD} ratings">
+										low confidence
+									</span>
+								{/if}
+							</td>
+							<td>{m.sampleSize === 0 ? '—' : (m.adequacyRate * 100).toFixed(0) + '%'}</td>
+							<td>{m.sampleSize === 0 ? '—' : (m.criticalFailureRate * 100).toFixed(0) + '%'}</td>
 							<td>
 								{#if m.skippedTurns > 0}
 									<span
@@ -730,7 +1008,9 @@
 								{/if}
 							</td>
 							<td>
-								{#if m.meetsThreshold}
+								{#if m.sampleSize === 0}
+									<span class="muted">—</span>
+								{:else if m.meetsThreshold}
 									<span class="badge go">Yes</span>
 								{:else}
 									<span class="badge skip">No</span>
