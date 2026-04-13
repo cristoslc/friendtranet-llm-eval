@@ -1,7 +1,7 @@
 id: apple-silicon-model-tier-ram
 created: 2026-04-13
 refreshed: 2026-04-13
-last-event: extended-with-128k-kv-math
+last-event: extended-with-cross-family-alternatives
 tags:
   - apple-silicon
   - mlx
@@ -115,6 +115,54 @@ sources:
     content-hash: 7db30c84fa6d1658752533974b14378e10b33b06362c221498c6eefd4f949dbd
     notes: "OpenRouter quantization-filter parameter documentation; basis for SPEC-013."
 
+  - id: gemma-4-release
+    url: https://huggingface.co/blog/gemma4
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 9b4532f5c1d9c5000f859ad413babf96c13a9a429d5b7624dde1ffe73c6e406f
+    notes: "Gemma 4 family overview; establishes variants (E2B/E4B/26B-A4B/31B-Dense), hybrid sliding+global attention, shared KV cache."
+
+  - id: gemma4-wiki-mlx-requirements
+    url: https://www.gemma4.wiki/models/gemma4-mlx
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 033bc83ad55e073be127917a2efdd77a935c9e823a9d410eeb8008a1941d5f5c
+    notes: "Concrete Q4 file sizes + recommended Mac hardware per Gemma 4 variant."
+
+  - id: gpt-oss-20b-mlx-card
+    url: https://huggingface.co/InferenceIllusionist/gpt-oss-20b-MLX-4bit
+    type: repository
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: d4ffea533e174c29a3eed148abe4d307e6dc23b36e85e4963c550e5c21b00530
+    notes: "gpt-oss-20b MLX 4-bit card: 11.8 GB disk, 24 layers, hybrid alternating attention, 32 experts / 4 active. Mini-tier cross-family alternative."
+
+  - id: llama-4-scout-mlx-card
+    url: https://huggingface.co/mlx-community/Llama-4-Scout-17B-16E-Instruct-4bit
+    type: repository
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: e39c094343bf550ab07a2b23bf18835333214826952f3fbde25e4d8ab72437d7
+    notes: "Llama 4 Scout 4-bit MLX. 60 GB disk (base) or 200 GB (instruct, packaging discrepancy). Medium-tier cross-family alternative."
+
+  - id: hardware-corner-llama-4-benchmark
+    url: https://www.hardware-corner.net/llama-4-on-mac-m3-ultra-speed/
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 5ba428c25bcd1fd24db27ddd2986a9e3366fb2eef15a844b1cdfad606ceee10f
+    notes: "M3 Ultra Llama 4 Scout/Maverick throughput numbers at 4-bit MLX."
+
+  - id: google-blog
+    url: https://blog.google/innovation-and-ai/technology/developers-tools/gemma-4/
+    type: web
+    fetched: 2026-04-13
+    freshness-ttl: 180d
+    content-hash: 90aabf6bdde3692268547f857931061365461b843e25b4ec0991b575c676c3d8
+    notes: "Google's official Gemma 4 announcement; corroborates HF blog + wiki."
+
 history:
   - event: created
     date: 2026-04-13
@@ -125,3 +173,8 @@ history:
     commit: "caace58"
     sources-added: 3
     reason: "Add 128K-context KV cache architecture data + OpenRouter quantization routing docs; revise synthesis for 5-user × 128K scenario."
+  - event: extended
+    date: 2026-04-13
+    commit: "--"
+    sources-added: 6
+    reason: "Cross-family alternatives per tier (Gemma 4 family, gpt-oss-20b, Llama 4 Scout). Synthesis now maps each tier (Mini→Large) with primary + alternative model options. Frontier models (GLM, Llama 4 Maverick) ruled out per operator decision; 2-bit quantization off-table."
