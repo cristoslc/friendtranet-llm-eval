@@ -18,6 +18,11 @@
 		setRating,
 		revealTurn,
 		computeMetrics,
+		deleteCustomConversation,
+		setCustomOpeningPrompt,
+		appendCustomTurn,
+		runCustomTurn,
+		CUSTOM_TURN_CAP,
 		LOW_CONFIDENCE_THRESHOLD,
 		personalMinimumTier,
 		resolveModelId,
@@ -73,6 +78,141 @@
 	let ratingTurnIndex = $state(0);
 	let showRating = $state(false);
 
+	// SPEC-007: Custom conversation draft UI state
+	let customEnabled = $state(false);
+	let customDraft = $state('');
+	let customPriorDraft = $state('');
+	let customWarningAck = $state(false); // reset per session (component mount)
+	let customWarningOpen = $state(false);
+	let customPendingDraft = $state('');
+
+	// SPEC-007: derivations referenced by the Custom card (keeps DOM scope clean)
+	let customConv = $derived(getW3State().customConversation);
+	let customSelected = $derived(
+		!!customConv && getW3State().selectedConversations.includes(customConv.id)
+	);
+	let customCached = $derived(
+		!!customConv &&
+			(Object.keys(getW3State().evalResults).some((k) => k.startsWith(customConv!.id + ':')) ||
+				getW3State().turnRatings.some((tr) => tr.conversationId === customConv!.id))
+	);
+
+	/**
+	 * SPEC-007 AC #3/#4: intercept textarea edits. If cached results exist
+	 * for the active custom conversation and the rater hasn't yet acknowledged
+	 * the warning this session, open the modal instead of accepting the edit.
+	 * The modal's confirm/cancel path finalizes the state change.
+	 */
+	function handleCustomDraftInput(e: Event) {
+		const next = (e.target as HTMLTextAreaElement).value;
+		if (customCached && !customWarningAck) {
+			customPendingDraft = next;
+			customDraft = customPriorDraft; // revert in the DOM until confirmed
+			customWarningOpen = true;
+			return;
+		}
+		customDraft = next;
+		customPriorDraft = next;
+	}
+
+	function confirmCustomWarning() {
+		if (customConv) {
+			deleteCustomConversation();
+		}
+		customDraft = customPendingDraft;
+		customPriorDraft = customPendingDraft;
+		customWarningAck = true;
+		customWarningOpen = false;
+		customPendingDraft = '';
+	}
+
+	function cancelCustomWarning() {
+		customDraft = customPriorDraft;
+		customWarningOpen = false;
+		customPendingDraft = '';
+	}
+
+	// SPEC-007: Custom conversation next-turn input state
+	let customNextTurnInput = $state('');
+
+	/**
+	 * Cost-preview gate for a custom turn. Returns true when the rater
+	 * approves, false when they cancel. Mirrors the confirm-before-action
+	 * pattern already used for resets.
+	 */
+	function approveCustomTurnCost(newUserText: string, turnIndex: number): boolean {
+		const tiers = modelTiers.filter(
+			(t) => getW3State().selectedTierIds.includes(t.id) || t.isAnchor
+		);
+		const custom = getW3State().customConversation;
+		// Rough transcript tokens: 4 chars ≈ 1 token.
+		const priorUserChars = (custom?.turns ?? []).reduce(
+			(sum, t) => sum + (t.content?.length ?? 0),
+			0
+		);
+		const estTokensPerTier = Math.ceil((priorUserChars + newUserText.length) / 4);
+		const totalEstTokens = estTokensPerTier * tiers.length;
+		const msg = `Turn ${turnIndex + 1}: ~${estTokensPerTier.toLocaleString()} tokens × ${tiers.length} tier${tiers.length === 1 ? '' : 's'} ≈ ${totalEstTokens.toLocaleString()} tokens to OpenRouter. Continue?`;
+		return confirm(msg);
+	}
+
+	/**
+	 * Launch the Custom conversation — commits draft as the opening prompt
+	 * and fans out to every active tier. Opens the rating UI on turn 1.
+	 */
+	async function startCustomEvaluation() {
+		if (!customDraft.trim()) return;
+		if (!approveCustomTurnCost(customDraft.trim(), 0)) return;
+		// If a prior custom conv exists with cached results, deleteCustomConversation
+		// has already run (via the warning modal). For the fresh-path or post-confirm
+		// case, just commit the current draft.
+		setCustomOpeningPrompt(customDraft.trim());
+		const customId = getW3State().customConversation!.id;
+		abortController = new AbortController();
+		evalStatus = 'Starting custom evaluation…';
+		try {
+			await runCustomTurn(0, (msg) => (evalStatus = msg), abortController.signal);
+			evalStatus = 'Custom turn 1 complete.';
+			// Land the rater on turn 1 of the new custom conv.
+			const w3 = getW3State();
+			const selected = bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id));
+			// Custom conv isn't in bundle, so find by id scanning selectedConversations.
+			const customIdxInSelected = w3.selectedConversations.indexOf(customId);
+			ratingConvIndex = customIdxInSelected >= 0 ? selected.length : 0;
+			ratingTurnIndex = 0;
+			showRating = true;
+		} catch (e) {
+			evalStatus = `Error: ${(e as Error).message}`;
+		}
+		abortController = null;
+	}
+
+	/**
+	 * Submit the next user message for the active custom conversation.
+	 * Appends the user turn and fans out to each tier for that turn.
+	 */
+	async function submitCustomNextTurn() {
+		const text = customNextTurnInput.trim();
+		if (!text) return;
+		const custom = getW3State().customConversation;
+		if (!custom) return;
+		const currentUserTurns = custom.turns.filter((t) => t.role === 'user').length;
+		if (currentUserTurns >= CUSTOM_TURN_CAP) return;
+		if (!approveCustomTurnCost(text, currentUserTurns)) return;
+		appendCustomTurn('user', text);
+		customNextTurnInput = '';
+		const newTurnIdx = currentUserTurns; // 0-based index of the newly added turn
+		abortController = new AbortController();
+		try {
+			await runCustomTurn(newTurnIdx, (msg) => (evalStatus = msg), abortController.signal);
+			evalStatus = `Custom turn ${newTurnIdx + 1} complete.`;
+			ratingTurnIndex = newTurnIdx;
+		} catch (e) {
+			evalStatus = `Error: ${(e as Error).message}`;
+		}
+		abortController = null;
+	}
+
 	let w1Total = $derived(computeTotalLoss());
 	let w2Total = $derived(computeAdjustedWtp());
 	let combined = $derived(w1Total + w2Total);
@@ -92,17 +232,26 @@
 			apiKey = saved;
 			keyVerified = true;
 		}
+		// SPEC-007: restore the Custom card's draft from any persisted conv
+		const persistedCustom = getW3State().customConversation;
+		if (persistedCustom) {
+			customDraft = persistedCustom.openingPrompt;
+			customPriorDraft = persistedCustom.openingPrompt;
+		}
 		resumeRatingIfInProgress();
 	});
 
-	// SPEC-006 AC #4: on reload, re-enter the rating UI at the last rated turn
-	// if prior ratings exist for the current selection.
+	// SPEC-006 AC #4 + SPEC-007: on reload, re-enter the rating UI at the
+	// last rated turn across the selection — curated AND custom.
 	function resumeRatingIfInProgress() {
 		const w3 = getW3State();
 		if (w3.turnRatings.length === 0) return;
-		const selected = bundle.conversations.filter((c) =>
-			w3.selectedConversations.includes(c.id)
-		);
+		const selected: Array<{ id: string; turns: Array<{ role: string; content: string }> }> = [
+			...bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id)),
+			...(w3.customConversation && w3.selectedConversations.includes(w3.customConversation.id)
+				? [w3.customConversation]
+				: [])
+		];
 		if (selected.length === 0) return;
 
 		let targetIdx = selected.length - 1;
@@ -399,6 +548,107 @@
 		</div>
 
 		<div class="checkbox-grid">
+			<!-- SPEC-007: Custom conversation card (always first) -->
+			<div
+				class="checkbox-card conversation-card"
+				class:selected={customSelected}
+				data-custom-card
+				style="display: flex; gap: 0.5rem; align-items: flex-start;"
+			>
+				<input
+					type="checkbox"
+					checked={customSelected}
+					disabled={!customConv}
+					onchange={() => customConv && toggleConversation(customConv.id)}
+					title={customConv ? 'Include this custom conversation in evaluation' : 'Write and save an opening prompt first'}
+					aria-label="Include custom conversation in evaluation"
+				/>
+				<div style="font-size: 0.8rem; min-width: 0; flex: 1;">
+					<div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap;">
+						<strong>Custom</strong>
+						<span class="badge">BYO prompt</span>
+						{#if customCached}
+							<span class="badge go">cached</span>
+						{/if}
+						{#if customConv}
+							{@const customUserTurns = customConv.turns.filter((t) => t.role === 'user').length}
+							{@const customRated = getRatedTurnCount(customConv.id)}
+							{#if customRated > 0}
+								<span
+									class="badge {customRated === customUserTurns ? 'go' : ''}"
+									data-rating-progress-conv={customConv.id}
+									title="Turns rated / total user turns"
+								>
+									{customRated}/{customUserTurns} rated
+								</span>
+							{/if}
+						{/if}
+					</div>
+					<label
+						for="custom-enable-checkbox"
+						style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; margin-bottom: 0.35rem; cursor: pointer;"
+					>
+						<input
+							id="custom-enable-checkbox"
+							type="checkbox"
+							bind:checked={customEnabled}
+							data-custom-enable-checkbox
+						/>
+						Enable editing
+					</label>
+					<textarea
+						rows="4"
+						placeholder="Write your opening prompt. Each selected tier will respond to this, then you can continue the chat up to five rater turns."
+						value={customDraft}
+						oninput={handleCustomDraftInput}
+						readonly={!customEnabled}
+						data-custom-textarea
+						aria-label="Custom conversation opening prompt"
+						style="width: 100%; font-size: 0.78rem; padding: 0.5rem; border-radius: var(--radius); border: 1px solid var(--color-border); background: {customEnabled ? 'var(--color-surface)' : 'var(--color-bg)'}; color: inherit; resize: vertical; font-family: inherit;"
+					></textarea>
+					<div
+						class="muted"
+						style="margin-top: 0.4rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; font-size: 0.7rem;"
+					>
+						<span>~{Math.max(1, Math.ceil(customDraft.length / 4)).toLocaleString()} tokens (draft)</span>
+						<span>up to {CUSTOM_TURN_CAP} rater turns</span>
+						{#if customConv}
+							<span title={customConv.id}>id: {customConv.id}</span>
+						{/if}
+					</div>
+					{#if keyVerified}
+						<div style="margin-top: 0.5rem; display: flex; gap: 0.4rem; flex-wrap: wrap;">
+							<button
+								type="button"
+								class="primary"
+								style="font-size: 0.72rem; padding: 0.35rem 0.7rem;"
+								data-custom-start
+								disabled={!customDraft.trim() || w3.evalProgress.running}
+								onclick={startCustomEvaluation}
+							>
+								{customConv ? 'Re-run turn 1' : 'Start custom evaluation'}
+							</button>
+							{#if customConv}
+								<button
+									type="button"
+									class="secondary"
+									style="font-size: 0.72rem; padding: 0.35rem 0.7rem; color: var(--color-danger); border-color: var(--color-danger);"
+									onclick={() => {
+										if (confirm('Delete the custom conversation along with its responses and ratings?')) {
+											deleteCustomConversation();
+											customDraft = '';
+											customPriorDraft = '';
+											customEnabled = false;
+										}
+									}}
+								>
+									Delete custom
+								</button>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			</div>
 			{#each filteredConversations as conv}
 				{@const selected = w3.selectedConversations.includes(conv.id)}
 				{@const firstUserTurn = conv.turns.find((t) => t.role === 'user')?.content ?? ''}
@@ -559,7 +809,12 @@
 
 	<!-- Blind Rating UI -->
 	{#if showRating}
-		{@const ratedConvs = bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id))}
+		{@const ratedConvs = [
+			...bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id)),
+			...(w3.customConversation && w3.selectedConversations.includes(w3.customConversation.id)
+				? [w3.customConversation]
+				: [])
+		]}
 		{#if ratedConvs.length > 0}
 			{@const currentConv = ratedConvs[ratingConvIndex]}
 			{@const userTurns = currentConv.turns.filter((t) => t.role === 'user')}
@@ -690,6 +945,52 @@
 						</div>
 					{/each}
 
+					<!-- SPEC-007: Custom next-turn chat input -->
+					{#if w3.customConversation && currentConv.id === w3.customConversation.id}
+						{@const customTurns = w3.customConversation.turns.filter((t) => t.role === 'user').length}
+						{@const atLastTurn = ratingTurnIndex === customTurns - 1}
+						{@const underCap = customTurns < CUSTOM_TURN_CAP}
+						{@const allRated = turnRating.labelOrder.every((m) => turnRating.ratings[m] !== undefined)}
+						{#if atLastTurn}
+							<div
+								class="card"
+								data-custom-next-turn
+								style="margin-top: 1rem; background: var(--color-bg);"
+							>
+								{#if underCap}
+									<h3 style="margin-top: 0;">Continue the conversation</h3>
+									<p class="muted" style="font-size: 0.75rem;">
+										Write your next message. Rate the current turn first; then each selected tier will respond.
+										{customTurns}/{CUSTOM_TURN_CAP} rater turns used.
+									</p>
+									<textarea
+										rows="3"
+										bind:value={customNextTurnInput}
+										placeholder="Your next message to the models…"
+										data-custom-next-turn-input
+										aria-label="Next user message"
+										disabled={!allRated || w3.evalProgress.running}
+										style="width: 100%; font-size: 0.8rem; padding: 0.5rem; border-radius: var(--radius); border: 1px solid var(--color-border); background: var(--color-surface); color: inherit; resize: vertical; font-family: inherit;"
+									></textarea>
+									<button
+										type="button"
+										class="primary"
+										style="margin-top: 0.5rem; font-size: 0.8rem;"
+										data-custom-next-turn-submit
+										disabled={!customNextTurnInput.trim() || !allRated || w3.evalProgress.running}
+										onclick={submitCustomNextTurn}
+									>
+										Send turn {customTurns + 1}
+									</button>
+								{:else}
+									<p class="muted" style="font-size: 0.8rem; margin: 0;" data-custom-cap-reached>
+										Five-turn cap reached. Rate the remaining responses to finish.
+									</p>
+								{/if}
+							</div>
+						{/if}
+					{/if}
+
 					<!-- Navigation -->
 					<div style="display: flex; justify-content: space-between; margin-top: 1rem;">
 						<button class="secondary" disabled={ratingTurnIndex === 0 && ratingConvIndex === 0} onclick={() => {
@@ -730,7 +1031,12 @@
 
 	<!-- Metrics -->
 	{#if hasRatings}
-		{@const selectedConvs = bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id))}
+		{@const selectedConvs = [
+			...bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id)),
+			...(w3.customConversation && w3.selectedConversations.includes(w3.customConversation.id)
+				? [w3.customConversation]
+				: [])
+		]}
 		{@const includedConvs = selectedConvs.filter((c) => getRatedTurnCount(c.id) > 0)}
 		{@const excludedConvs = selectedConvs.filter((c) => getRatedTurnCount(c.id) === 0)}
 		<div class="card" style="margin-top: 1.5rem;">
@@ -811,6 +1117,43 @@
 					</div>
 				</div>
 			{/if}
+		</div>
+	{/if}
+
+	<!-- SPEC-007 AC #4: Custom edit-with-cache warning modal -->
+	{#if customWarningOpen}
+		<div
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="custom-warning-title"
+			data-custom-warning-modal
+			style="position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999;"
+		>
+			<div class="card" style="max-width: 480px; margin: 1rem; padding: 1.25rem;">
+				<h2 id="custom-warning-title" style="margin-top: 0;">Saving will wipe cached results</h2>
+				<p>
+					You've cached responses (and possibly ratings) for this custom conversation.
+					Editing the opening prompt invalidates them. Continue?
+				</p>
+				<div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+					<button
+						type="button"
+						class="secondary"
+						data-custom-warning-cancel
+						onclick={cancelCustomWarning}
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						class="primary"
+						data-custom-warning-confirm
+						onclick={confirmCustomWarning}
+					>
+						Discard cache &amp; edit
+					</button>
+				</div>
+			</div>
 		</div>
 	{/if}
 
