@@ -6,7 +6,9 @@ import {
 	seededShuffle as pureSeededShuffle,
 	buildReplayMessages as pureBuildReplayMessages,
 	computeGeneratedTurnCount,
-	hasMoreTurnsToGenerate
+	hasMoreTurnsToGenerate,
+	computeTierMetricsPure,
+	personalMinimumTierPure
 } from './w3-pure';
 
 export interface EvalResult {
@@ -1042,69 +1044,16 @@ export function computeMetrics(): TierMetrics[] {
 	const allTiers = modelTiers.filter(
 		(t) => state.selectedTierIds.includes(t.id) || t.isAnchor
 	);
-
-	return allTiers.map((tier) => {
-		// Use effective model ID so per-tier model overrides land in the
-		// same bucket that ratings are stored under (labelOrder uses
-		// resolveModelId too).
-		const effectiveModelId = resolveModelId(tier);
-		const ratings: number[] = [];
-		for (const tr of state.turnRatings) {
-			if (tr.ratings[effectiveModelId] !== undefined) {
-				ratings.push(tr.ratings[effectiveModelId]);
-			}
-		}
-
-		// Count operator-skipped turns for this model across every cached
-		// evaluation. Aggregation already ignored these (no rating) — this
-		// surfaces them as a recorded gap so the operator sees WHY a tier
-		// has a low sample size.
-		let skippedTurns = 0;
-		for (const result of Object.values(state.evalResults)) {
-			if (result.modelId === effectiveModelId) {
-				skippedTurns += result.skippedTurns?.length ?? 0;
-			}
-		}
-
-		if (ratings.length === 0) {
-			return {
-				tierId: tier.id,
-				tierLabel: tier.label,
-				modelId: effectiveModelId,
-				adequacyRate: 0,
-				criticalFailureRate: 0,
-				weightedAdequacy: 0,
-				meetsThreshold: false,
-				sampleSize: 0,
-				skippedTurns
-			};
-		}
-
-		const adequate = ratings.filter((r) => r >= 3).length;
-		const critical = ratings.filter((r) => r === 1).length;
-		const adequacyRate = adequate / ratings.length;
-		const criticalFailureRate = critical / ratings.length;
-
-		return {
-			tierId: tier.id,
-			tierLabel: tier.label,
-			modelId: effectiveModelId,
-			adequacyRate,
-			criticalFailureRate,
-			weightedAdequacy: adequacyRate,
-			meetsThreshold: adequacyRate >= 0.8 && criticalFailureRate <= 0.1,
-			sampleSize: ratings.length,
-			skippedTurns
-		};
-	});
+	const tiers = allTiers.map((t) => ({
+		tierId: t.id,
+		tierLabel: t.label,
+		modelId: resolveModelId(t)
+	}));
+	return computeTierMetricsPure(state.turnRatings, state.evalResults, tiers);
 }
 
+export const TIER_ORDER = ['mini', 'small', 'medium', 'large', 'anchor'];
+
 export function personalMinimumTier(): string | null {
-	const metrics = computeMetrics();
-	const tierOrder = ['mini', 'small', 'medium', 'large', 'anchor'];
-	for (const tierId of tierOrder) {
-		const m = metrics.find((x) => x.tierId === tierId);
-		if (m && m.meetsThreshold) return tierId;
-	}
-	return null;
+	return personalMinimumTierPure(computeMetrics(), TIER_ORDER);
 }

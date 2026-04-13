@@ -919,21 +919,32 @@
 									Reveal Models
 								</button>
 							{/if}
-							<button class="primary" disabled={!turnRating.labelOrder.every((m) => turnRating.ratings[m] !== undefined) || (atLastGeneratedTurn && canExpand)} onclick={() => {
+							<button class="secondary" data-testid="advance-next" disabled={!turnRating.labelOrder.every((m) => turnRating.ratings[m] !== undefined)} onclick={() => {
 								if (safeTurnIndex < generatedForConv - 1 && safeTurnIndex < userTurns.length - 1) {
 									ratingTurnIndex = safeTurnIndex + 1;
 								} else if (ratingConvIndex < ratedConvs.length - 1) {
 									ratingConvIndex++;
 									ratingTurnIndex = 0;
-								} else {
-									showRating = false;
 								}
 							}}>
 								{safeTurnIndex < generatedForConv - 1 && safeTurnIndex < userTurns.length - 1
 									? 'Next Turn →'
 									: ratingConvIndex < ratedConvs.length - 1
 										? 'Next Conversation →'
-										: 'Finish Rating'}
+										: 'End of sequence'}
+							</button>
+							<button
+								class="primary"
+								data-testid="finish-rating"
+								title="Close the rating panel and jump to the results section. Your ratings so far are already saved."
+								onclick={() => {
+									showRating = false;
+									queueMicrotask(() => {
+										document.getElementById('results')?.scrollIntoView({ behavior: 'smooth' });
+									});
+								}}
+							>
+								Done — view results
 							</button>
 						</div>
 					</div>
@@ -950,7 +961,7 @@
 		{@const selectedConvs = bundle.conversations.filter((c) => w3.selectedConversations.includes(c.id))}
 		{@const includedConvs = selectedConvs.filter((c) => getRatedTurnCount(c.id) > 0)}
 		{@const excludedConvs = selectedConvs.filter((c) => getRatedTurnCount(c.id) === 0)}
-		<div class="card" style="margin-top: 1.5rem;">
+		<div class="card" id="results" style="margin-top: 1.5rem;">
 			<h2>Results</h2>
 			<p class="muted" style="font-size: 0.8rem;" data-coverage-summary>
 				Coverage: {includedConvs.length} of {selectedConvs.length} selected conversations contribute ratings.

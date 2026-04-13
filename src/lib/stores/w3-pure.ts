@@ -81,3 +81,102 @@ export function hasMoreTurnsToGenerate(
 export function estimateTurnTokens(userTurnContent: string, tierCount: number): number {
 	return Math.max(100, Math.round(userTurnContent.length / 4) + 500) * tierCount;
 }
+
+export interface TurnRatingLike {
+	conversationId: string;
+	turnIndex: number;
+	ratings: Record<string, number>;
+}
+
+export interface EvalResultWithSkipped {
+	modelId: string;
+	skippedTurns?: number[];
+}
+
+export interface TierDescriptor {
+	tierId: string;
+	tierLabel: string;
+	modelId: string;
+}
+
+export interface TierMetricsPure {
+	tierId: string;
+	tierLabel: string;
+	modelId: string;
+	adequacyRate: number;
+	criticalFailureRate: number;
+	weightedAdequacy: number;
+	meetsThreshold: boolean;
+	sampleSize: number;
+	skippedTurns: number;
+}
+
+/** Compute per-tier metrics from raw state. Pure: same inputs always give
+ * the same output. Used by both the in-app store (to drive the Results
+ * table) and the export module (to snapshot ratings into the shared
+ * assessment JSON). */
+export function computeTierMetricsPure(
+	turnRatings: TurnRatingLike[],
+	evalResults: Record<string, EvalResultWithSkipped>,
+	tiers: TierDescriptor[]
+): TierMetricsPure[] {
+	return tiers.map((tier) => {
+		const ratings: number[] = [];
+		for (const tr of turnRatings) {
+			if (tr.ratings[tier.modelId] !== undefined) {
+				ratings.push(tr.ratings[tier.modelId]);
+			}
+		}
+
+		let skippedTurns = 0;
+		for (const result of Object.values(evalResults)) {
+			if (result.modelId === tier.modelId) {
+				skippedTurns += result.skippedTurns?.length ?? 0;
+			}
+		}
+
+		if (ratings.length === 0) {
+			return {
+				tierId: tier.tierId,
+				tierLabel: tier.tierLabel,
+				modelId: tier.modelId,
+				adequacyRate: 0,
+				criticalFailureRate: 0,
+				weightedAdequacy: 0,
+				meetsThreshold: false,
+				sampleSize: 0,
+				skippedTurns
+			};
+		}
+
+		const adequate = ratings.filter((r) => r >= 3).length;
+		const critical = ratings.filter((r) => r === 1).length;
+		const adequacyRate = adequate / ratings.length;
+		const criticalFailureRate = critical / ratings.length;
+
+		return {
+			tierId: tier.tierId,
+			tierLabel: tier.tierLabel,
+			modelId: tier.modelId,
+			adequacyRate,
+			criticalFailureRate,
+			weightedAdequacy: adequacyRate,
+			meetsThreshold: adequacyRate >= 0.8 && criticalFailureRate <= 0.1,
+			sampleSize: ratings.length,
+			skippedTurns
+		};
+	});
+}
+
+/** Lowest-tier test: walk the tier ordering and return the first tier whose
+ * metrics meet the adequacy threshold. Returns null if none qualify. */
+export function personalMinimumTierPure(
+	metrics: TierMetricsPure[],
+	tierOrder: string[]
+): string | null {
+	for (const tierId of tierOrder) {
+		const m = metrics.find((x) => x.tierId === tierId);
+		if (m && m.meetsThreshold) return tierId;
+	}
+	return null;
+}

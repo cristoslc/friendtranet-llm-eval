@@ -1,9 +1,11 @@
 import { dbGet } from './db';
 import type { W1State } from './worksheet1.svelte';
 import type { W2State } from './worksheet2.svelte';
+import type { W3State } from './worksheet3.svelte';
 import { threats, probabilityOptions, impactScales } from '$lib/data/threats';
 import { compromiseOptions } from '$lib/data/principles';
-import { hardwareTiers } from '$lib/data/tiers';
+import { hardwareTiers, modelTiers } from '$lib/data/tiers';
+import { buildW3Export, type W3Export } from './w3-export-builder';
 
 export interface ExportData {
 	version: 1;
@@ -25,17 +27,7 @@ export interface ExportData {
 		compromiseReduction: number;
 		adjustedWtp: number;
 	};
-	w3: {
-		evaluated: boolean;
-		perTier?: Array<{
-			tierId: string;
-			adequacyRate: number;
-			criticalFailureRate: number;
-			weightedAdequacy: number;
-		}>;
-		personalMinimumTier?: string | null;
-		compromiseCost?: number;
-	};
+	w3: W3Export;
 	combined: {
 		riskValue: number;
 		principleValue: number;
@@ -99,6 +91,18 @@ export async function generateExport(displayName: string): Promise<ExportData> {
 		.filter((t) => totalValue >= t.annualTCO)
 		.map((t) => t.id);
 
+	const w3 = await dbGet<W3State>('worksheets', 'w3');
+	const selectedTierIds = w3?.selectedTierIds ?? [];
+	const overrides = w3?.modelOverrides ?? {};
+	const tierDescriptors = modelTiers
+		.filter((t) => selectedTierIds.includes(t.id) || t.isAnchor)
+		.map((t) => ({
+			tierId: t.id,
+			tierLabel: t.label,
+			modelId: overrides[t.id] ?? t.modelId
+		}));
+	const w3Block: ExportData['w3'] = buildW3Export(w3, tierDescriptors);
+
 	return {
 		version: 1,
 		displayName,
@@ -111,7 +115,7 @@ export async function generateExport(displayName: string): Promise<ExportData> {
 			compromiseReduction,
 			adjustedWtp
 		},
-		w3: { evaluated: false },
+		w3: w3Block,
 		combined: {
 			riskValue: totalLoss,
 			principleValue: adjustedWtp,
