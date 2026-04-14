@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
-	import { modelTiers } from '$lib/data/tiers';
+	import { modelTiers, hardwareTiers } from '$lib/data/tiers';
 	import { classifiedCategories } from '$lib/data/principles';
 	import { loadW1, computeTotalLoss } from '$lib/stores/worksheet1.svelte';
 	import { loadW2, computeAdjustedWtp } from '$lib/stores/worksheet2.svelte';
@@ -538,6 +538,69 @@
 			You can override any model ID — useful when a tier's default isn't ZDR-compliant under
 			your OpenRouter settings.
 		</p>
+		<!-- Hardware legend table -->
+		<div style="overflow-x: auto; margin-bottom: 1rem;">
+			<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+				<thead>
+					<tr style="border-bottom: 1px solid var(--border, #e5e7eb);">
+						<th style="text-align: left; padding: 0.35rem 0.5rem; font-weight: 600;">Tier</th>
+						<th style="text-align: left; padding: 0.35rem 0.5rem; font-weight: 600;">Model</th>
+						<th style="text-align: right; padding: 0.35rem 0.5rem; font-weight: 600;">Peak RAM</th>
+						<th style="text-align: left; padding: 0.35rem 0.5rem; font-weight: 600;">Min hw</th>
+						<th style="text-align: left; padding: 0.35rem 0.5rem; font-weight: 600;">Comfortable hw</th>
+						<th style="text-align: center; padding: 0.35rem 0.5rem; font-weight: 600;">Cloud-only?</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each modelTiers as tier}
+						{@const minHw = hardwareTiers.find((h) => h.id === tier.minHardwareTierId)}
+						{@const comfHw = tier.comfortableHardwareTierId
+							? hardwareTiers.find((h) => h.id === tier.comfortableHardwareTierId)
+							: null}
+						{@const isCloud = tier.minHardwareTierId === 'cloud'}
+						<tr style="border-bottom: 1px solid var(--border-subtle, #f3f4f6);">
+							<td style="padding: 0.3rem 0.5rem; font-weight: 500;">{tier.label}</td>
+							<td style="padding: 0.3rem 0.5rem; font-family: monospace; font-size: 0.72rem; color: var(--muted, #6b7280);">{tier.modelId}</td>
+							<td style="padding: 0.3rem 0.5rem; text-align: right;">
+								{#if isCloud}
+									<span class="muted">—</span>
+								{:else}
+									{tier.peakRamGB} GB
+								{/if}
+							</td>
+							<td style="padding: 0.3rem 0.5rem;">
+								{#if isCloud}
+									<span class="muted">Cloud only</span>
+								{:else}
+									{minHw?.label ?? tier.minHardwareTierId}
+								{/if}
+							</td>
+							<td style="padding: 0.3rem 0.5rem;">
+								{#if isCloud}
+									<span class="muted">Cloud only</span>
+								{:else if comfHw}
+									{comfHw.label}
+								{:else}
+									<span class="muted">—</span>
+								{/if}
+							</td>
+							<td style="padding: 0.3rem 0.5rem; text-align: center;">
+								{#if isCloud}✓{:else}—{/if}
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<details style="margin-bottom: 1rem; font-size: 0.8rem;">
+			<summary style="cursor: pointer; font-weight: 500; color: var(--muted, #6b7280); user-select: none;">Methodology</summary>
+			<div style="margin-top: 0.5rem; padding: 0.75rem; background: var(--surface-subtle, #f9fafb); border-radius: 6px; line-height: 1.5;">
+				<p style="margin: 0 0 0.5rem;">RAM figures assume <strong>5 concurrent users</strong>, each with a <strong>128K-token context window</strong>, running 4-bit MLX quantization on Apple Silicon.</p>
+				<p style="margin: 0 0 0.5rem;">Formula: <code>peak RAM = weights (4-bit) + KV cache × 5 users + OS overhead</code>. KV cache per session is computed from the model's full-attention layer count, KV heads, and head dimension.</p>
+				<p style="margin: 0;">Source: trove <code>apple-silicon-model-tier-ram@d681e07</code>. Figures marked with "est." carry a ±30% uncertainty band; see trove for details.</p>
+			</div>
+		</details>
+
 		{#each modelTiers as tier}
 			{@const checked = tier.isAnchor || w3.selectedTierIds.includes(tier.id)}
 			{@const currentId = resolveModelId(tier)}
