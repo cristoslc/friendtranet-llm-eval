@@ -83,6 +83,7 @@ export interface ModelTier {
  * Qwen 3.5 family reports 256K native but the spec caps them at 128K for the
  * "Target 128K" preset — the caller applies min() before this table is
  * relevant only for smaller-native models (e.g., gpt-oss-120b at 128K).
+ * Source: trove apple-silicon-model-tier-ram@d681e07.
  */
 export const MODEL_NATIVE_MAX_CONTEXT: Record<string, number> = {
 	'qwen/qwen3.5-9b': 131072,
@@ -188,13 +189,3 @@ export const modelTiers: ModelTier[] = [
 	}
 ];
 
-/** Native maximum context window per model (tokens).
- * Used by SPEC-013 to cap max_tokens at the model's hard limit.
- * Source: trove apple-silicon-model-tier-ram@d681e07. */
-export const MODEL_NATIVE_MAX_CONTEXT: Record<string, number> = {
-	'qwen/qwen3.5-9b': 32768,
-	'qwen/qwen3.5-35b-a3b': 32768,
-	'openai/gpt-oss-120b': 128000,
-	'qwen/qwen3.5-122b-a10b': 131072,
-	'anthropic/claude-opus-4-6': 200000
-};
