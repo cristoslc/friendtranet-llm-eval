@@ -8,7 +8,7 @@ This second extension adds **cross-family alternatives** at each tier — so use
 
 Also documents a validity caveat: OpenRouter providers serve at varying quantizations; W3 needs to pin `provider.quantizations` to produce a fair comparison (SPEC-013).
 
-Per operator decision, frontier-only models (GLM-4.6 / GLM-5) are ruled out — they require Max-tier hardware that's hard to source and push costs beyond most households. Llama 4 Maverick is now conditionally accepted as a new Max tier (SPIKE-002). 2-bit quantization is off the table; 4-bit MLX is the maximum compression used in this mapping.
+Llama 4 Maverick is conditionally accepted as a new Max tier (SPIKE-002). GLM-4.6 is also reinstated as a new XL tier (High 256 GB hardware, ~230–245 GB peak RAM); it carries the same fp8/int4 caveat as Maverick. 2-bit quantization is off the table; 4-bit MLX is the maximum compression used in this mapping.
 
 ## Final mapping (5 concurrent users × 128K context each)
 
@@ -41,7 +41,7 @@ Per operator decision, frontier-only models (GLM-4.6 / GLM-5) are ruled out — 
 |-------|--------|-----------------|---------------|----------|-------|
 | **qwen/qwen3.5-122b-a10b** *(primary)* | Alibaba | 70 GB | 20 GB | **~96 GB** | Hybrid attention. 10B active MoE. |
 
-No cross-family Large alternative was identified under the 4-bit-max constraint. Three reasons: Maverick is Max-tier-only (226 GB at 4-bit MLX); Mistral's 2026 hybrid MoE successors are too small; GLM-4.6 is ruled out per frontier-model exclusion. Large tier is a Qwen-only slot in the current market.
+No cross-family Large alternative was identified under the 4-bit-max constraint. GLM-4.6 (~230–245 GB at 4-bit MLX) and Maverick (226 GB) both exceed the Large-tier envelope and are assigned to their own tiers (XL and Max respectively). Large tier is a Qwen-only slot.
 
 ### Max tier (~251 GB estimated peak RAM, 512 GB hardware required)
 
@@ -104,12 +104,12 @@ Architecture-confirmed numbers are marked "official" or with direct citations in
 |------|--------|---------|-----------|-------------------------------------|
 | Entry | Mac mini M4 Pro 64 GB | ~$2,400 | ~$984/yr | Mini, Small |
 | Mid | Mac Studio M4 Max 128 GB | ~$4,500 | ~$1,680/yr | Medium, Large (tight) |
-| High | Mac Studio M3 Ultra 256 GB | $7,899 | ~$2,808/yr | Medium, Large (comfortable) |
-| Max | Mac Studio M3 Ultra 512 GB (secondary) | ~$14,000 | ~$4,848/yr | Llama 4 Maverick (conditional, fp8/int4 caveat) |
+| High | Mac Studio M3 Ultra 256 GB | $7,899 | ~$2,808/yr | Medium, Large (comfortable); GLM-4.6 XL tier (conditional, fp8/int4 caveat; ~230–245 GB peak, tight fit) |
+| Max | Mac Studio M3 Ultra 512 GB (secondary) | ~$14,000 | ~$4,848/yr | Llama 4 Maverick (conditional, fp8/int4 caveat; ~251 GB peak) |
 
 ## Worksheet 3 validity — OpenRouter quantization parity
 
-OpenRouter routes requests across providers at varying quantizations. W3 must pin `provider.quantizations` to make the comparison fair — covered in SPEC-013. Set `['fp4', 'int4']` for all models except gpt-oss (MXFP4 everywhere). For the Max tier (Maverick), fp8 is the only option; document the delta rather than filtering it out.
+OpenRouter routes requests across providers at varying quantizations. W3 must pin `provider.quantizations` to make the comparison fair — covered in SPEC-013. Set `['fp4', 'int4']` for all models except gpt-oss (MXFP4 everywhere). For the XL tier (GLM-4.6) and Max tier (Maverick), fp8 is the only cloud option; document the delta rather than filtering it out.
 
 ## Gaps / what's estimated
 

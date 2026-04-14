@@ -236,6 +236,6 @@ history:
     reason: "Cross-family alternatives per tier (Gemma 4 family, gpt-oss-20b, Llama 4 Scout). Synthesis now maps each tier (Mini→Large) with primary + alternative model options. Frontier models (GLM, Llama 4 Maverick) ruled out per operator decision; 2-bit quantization off-table."
   - event: extended
     date: 2026-04-14
-    commit: ""
+    commit: "c1d2f4b"
     sources-added: 7
     reason: "SPIKE-002 research: (1) Qwen3.5-122B KV confirmed from config.json at 24,576 bytes/token (was ~30,000 est.); (2) Scout Instruct file size confirmed 61.1 GB, 200 GB was upload error; (3) Maverick fp8-only on all cloud providers, 226 GB at 4-bit MLX — Max tier reopened conditionally with precision-parity caveat."

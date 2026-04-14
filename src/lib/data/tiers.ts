@@ -91,6 +91,7 @@ export const MODEL_NATIVE_MAX_CONTEXT: Record<string, number> = {
 	'openai/gpt-oss-120b': 128000,
 	'qwen/qwen3.5-122b-a10b': 131072,
 	'qwen/qwen3.5-397b-a17b': 131072,
+	'meta/llama-4-maverick': 131072,
 	'anthropic/claude-opus-4-6': 200000
 };
 
@@ -170,9 +171,21 @@ export const modelTiers: ModelTier[] = [
 		isAnchor: false,
 		defaultSelected: true,
 		note: '122B total / 10B active MoE (Feb 2026). Drop-in replacement for qwen3-235b-a22b which frequently lacks ZDR endpoints. If this one also fails, try qwen/qwen3.5-397b-a17b or qwen/qwen3-235b-a22b-thinking-2507 via the override below.',
-		peakRamGB: 96,
+		peakRamGB: 92,
 		minHardwareTierId: 'mid',
 		comfortableHardwareTierId: 'high',
+		alternatives: []
+	},
+	{
+		id: 'max',
+		label: 'Max',
+		modelId: 'meta/llama-4-maverick',
+		isAnchor: false,
+		defaultSelected: false,
+		note: '17B active × 128 experts MoE. Requires Mac Studio M3 Ultra 512 GB (~$14K secondary market). OpenRouter serves fp8 only — local MLX runs at int4 (226 GB). Conversational quality gap is modest (~0.6 pp MMLU-Pro); technical-domain gap is material (up to 8 pp HumanEval). W3 precision badge documents the fp8/int4 delta.',
+		peakRamGB: 251,
+		minHardwareTierId: 'max',
+		comfortableHardwareTierId: 'max',
 		alternatives: []
 	},
 	{
