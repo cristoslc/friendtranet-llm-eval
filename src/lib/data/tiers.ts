@@ -77,6 +77,25 @@ export interface ModelTier {
 	alternatives: ModelTierAlternative[];
 }
 
+/**
+ * Native context-window ceiling per model ID keyed by the OpenRouter model
+ * slug. Used by SPEC-013 to cap max_tokens at min(userChoice, nativeMax).
+ * Qwen 3.5 family reports 256K native but the spec caps them at 128K for the
+ * "Target 128K" preset — the caller applies min() before this table is
+ * relevant only for smaller-native models (e.g., gpt-oss-120b at 128K).
+ */
+export const MODEL_NATIVE_MAX_CONTEXT: Record<string, number> = {
+	'qwen/qwen3.5-9b': 131072,
+	'qwen/qwen3.5-35b-a3b': 131072,
+	'openai/gpt-oss-120b': 128000,
+	'qwen/qwen3.5-122b-a10b': 131072,
+	'qwen/qwen3.5-397b-a17b': 131072,
+	'anthropic/claude-opus-4-6': 200000
+};
+
+/** Fallback native max for model IDs not in MODEL_NATIVE_MAX_CONTEXT. */
+export const DEFAULT_NATIVE_MAX_CONTEXT = 131072;
+
 export const modelTiers: ModelTier[] = [
 	{
 		id: 'mini',
