@@ -40,8 +40,17 @@
 		skipTurnForModel,
 		unskipTurnForModel,
 		isTurnSkipped,
-		isTurnTruncated
+		isTurnTruncated,
+		setW3Settings,
+		hasPrecisionMismatch,
+		clearMismatchedCache,
+		stampCachePrecision,
+		precisionLabel,
+		sendingAsSummary,
+		resolveQuantizations,
+		effectiveMaxContext
 	} from '$lib/stores/worksheet3.svelte';
+	import type { PrecisionBand } from '$lib/stores/worksheet3.svelte';
 
 	function confirmReset(scope: 'all' | 'responses' | 'ratings') {
 		const messages = {
@@ -88,13 +97,69 @@
 	let ratingTurnIndex = $state(0);
 	let showRating = $state(false);
 
-	// SPEC-007: Custom conversation draft UI state
+	// SPEC-013: precision band cache-invalidation modal state
+	let precisionModalOpen = $state(false);
+	let pendingPrecisionBand = $state<PrecisionBand | null>(null);
+
+	// SPEC-013: no-provider error recovery modal state
+	let noProviderModalOpen = $state(false);
+
+	// SPEC-013: handle precision band change with cache invalidation check
+	function handlePrecisionBandChange(band: PrecisionBand) {
+		if (hasPrecisionMismatch(band)) {
+			pendingPrecisionBand = band;
+			precisionModalOpen = true;
+		} else {
+			setW3Settings({ precisionBand: band });
+		}
+	}
+
+	function confirmClearCache() {
+		if (!pendingPrecisionBand) return;
+		setW3Settings({ precisionBand: pendingPrecisionBand });
+		clearMismatchedCache();
+		pendingPrecisionBand = null;
+		precisionModalOpen = false;
+	}
+
+	function confirmKeepCacheMismatch() {
+		if (!pendingPrecisionBand) return;
+		setW3Settings({ precisionBand: pendingPrecisionBand });
+		stampCachePrecision();
+		pendingPrecisionBand = null;
+		precisionModalOpen = false;
+	}
+
+	function cancelPrecisionModal() {
+		pendingPrecisionBand = null;
+		precisionModalOpen = false;
+	}
+
+	// SPEC-013: Custom conversation draft UI state
 	let customEnabled = $state(false);
 	let customDraft = $state('');
 	let customPriorDraft = $state('');
 	let customWarningAck = $state(false); // reset per session (component mount)
 	let customWarningOpen = $state(false);
 	let customPendingDraft = $state('');
+
+	/** Fallback band for the no-provider recovery modal (one step up from current). */
+	function fallbackBand(current: PrecisionBand): PrecisionBand | null {
+		if (current === 'local') return 'balanced';
+		if (current === 'balanced') return 'frontier';
+		return null; // already at frontier, no fallback
+	}
+
+	function confirmNoProviderFallback() {
+		const w3 = getW3State();
+		const next = fallbackBand(w3.w3Settings.precisionBand);
+		if (next) setW3Settings({ precisionBand: next });
+		noProviderModalOpen = false;
+	}
+
+	function dismissNoProviderModal() {
+		noProviderModalOpen = false;
+	}
 
 	// SPEC-007: derivations referenced by the Custom card (keeps DOM scope clean)
 	let customConv = $derived(getW3State().customConversation);
@@ -598,6 +663,67 @@
 		{/each}
 	</div>
 
+	<!-- SPEC-013: Precision and Context Settings -->
+	<div class="card">
+		<h2>Evaluation Settings</h2>
+		<p class="muted">
+			These settings control how W3 calls OpenRouter. Match local MLX 4-bit + 128K context
+			are the defaults for a fair local-vs-cloud comparison.
+		</p>
+
+		<div style="display: flex; flex-wrap: wrap; gap: 2rem; margin-top: 0.75rem;">
+			<!-- Precision band -->
+			<fieldset style="border: none; padding: 0; margin: 0; min-width: 200px;">
+				<legend style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;">Precision band</legend>
+				{#each [
+					{ value: 'local', label: 'Match local MLX 4-bit', desc: 'fp4/int4' },
+					{ value: 'balanced', label: 'Balanced', desc: 'fp8' },
+					{ value: 'frontier', label: 'Frontier quality', desc: 'bf16/fp16' }
+				] as opt}
+					<label style="display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.4rem; cursor: pointer; font-size: 0.85rem;">
+						<input
+							type="radio"
+							name="precision-band"
+							value={opt.value}
+							checked={w3.w3Settings.precisionBand === opt.value}
+							onchange={() => handlePrecisionBandChange(opt.value as PrecisionBand)}
+							style="margin-top: 0.15rem;"
+						/>
+						<span>
+							{opt.label}
+							<span class="muted" style="font-size: 0.75rem;">({opt.desc})</span>
+						</span>
+					</label>
+				{/each}
+			</fieldset>
+
+			<!-- Max context -->
+			<fieldset style="border: none; padding: 0; margin: 0; min-width: 200px;">
+				<legend style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;">Max context</legend>
+				{#each [
+					{ value: 8192, label: 'Conservative 8K' },
+					{ value: 32768, label: 'Long 32K' },
+					{ value: 131072, label: 'Target 128K' }
+				] as opt}
+					<label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; cursor: pointer; font-size: 0.85rem;">
+						<input
+							type="radio"
+							name="max-context"
+							value={opt.value}
+							checked={w3.w3Settings.maxContext === opt.value}
+							onchange={() => setW3Settings({ maxContext: opt.value })}
+						/>
+						{opt.label}
+					</label>
+				{/each}
+			</fieldset>
+		</div>
+
+		<div style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: var(--color-bg); border-radius: var(--radius); font-size: 0.8rem; color: var(--color-text-muted);">
+			Active: <strong>{sendingAsSummary()}</strong> — applies to all candidate tiers. Anchor stays at Anthropic default. gpt-oss-120b is MXFP4 native regardless of band.
+		</div>
+	</div>
+
 	<!-- Conversation Selection: Path 1 -->
 	<div class="card">
 		<h2>Select Conversations</h2>
@@ -697,6 +823,7 @@
 								data-custom-start
 								disabled={!customDraft.trim() || w3.evalProgress.running}
 								onclick={startCustomEvaluation}
+								title="Sending as {sendingAsSummary()}"
 							>
 								{customConv ? 'Re-run turn 1' : 'Start custom evaluation'}
 							</button>
@@ -862,6 +989,10 @@
 					</div>
 				{/if}
 			{:else}
+				<!-- SPEC-013 AC #10: "Sending as" summary line -->
+				<p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--color-text-muted);">
+					Sending as <strong>{sendingAsSummary()}</strong>
+				</p>
 				{#if pairsNeedingTurn1.length > 0}
 					<button class="primary" data-testid="start-evaluation" onclick={startEvaluation} style="margin-top: 0.5rem;">
 						Start Evaluation ({pairsNeedingTurn1.length} turn-1 API calls)
@@ -876,6 +1007,24 @@
 					<p class="muted" style="margin-top: 0.5rem;">{evalStatus}</p>
 				{/if}
 				{#if w3.evalProgress.errors.length > 0}
+					{@const hasNoProvider = w3.evalProgress.errors.some((e) => e.includes('[no-provider]'))}
+					{#if hasNoProvider && !noProviderModalOpen}
+						<div class="flag-card" style="margin-top: 0.75rem; border-color: var(--color-warn);">
+							<strong>No provider available for the selected precision band.</strong>
+							<p style="font-size: 0.8rem; margin: 0.4rem 0 0 0;">
+								OpenRouter could not find a provider matching your precision band.
+								You can fall back to the next-higher band and re-run.
+							</p>
+							<div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+								<button class="primary" style="font-size: 0.78rem; padding: 0.35rem 0.7rem;" onclick={() => { noProviderModalOpen = true; }}>
+									Fall back and re-run
+								</button>
+								<button class="secondary" style="font-size: 0.78rem; padding: 0.35rem 0.7rem;" onclick={() => noProviderModalOpen = false}>
+									Dismiss
+								</button>
+							</div>
+						</div>
+					{/if}
 					<div class="flag-card" style="margin-top: 0.75rem;">
 						<strong>
 							{w3.evalProgress.errors.length} error{w3.evalProgress.errors.length === 1
@@ -1047,6 +1196,9 @@
 						{@const tierInfo = modelTiers.find(
 							(t) => resolveModelId(t) === modelId || t.modelId === modelId
 						)}
+						{@const candidatePrecLabel = tierInfo ? precisionLabel(modelId, tierInfo.isAnchor) : null}
+						{@const cachedBand = w3.evalResults[`${currentConv.id}:${modelId}`]?.cachedPrecision ?? null}
+						{@const hasBandMismatch = cachedBand !== null && cachedBand !== w3.w3Settings.precisionBand && !tierInfo?.isAnchor && modelId !== 'openai/gpt-oss-120b'}
 						<div
 							class="card"
 							style="margin-bottom: 0.75rem; border-left: 4px solid {isSkipped
@@ -1056,7 +1208,8 @@
 								: 'var(--color-primary)'};"
 						>
 							<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
-								<h3>
+								<div>
+								<h3 style="margin: 0 0 0.2rem 0;">
 									Response {labels[labelIdx]}
 									{#if turnRating.revealed && tierInfo}
 										—
@@ -1072,6 +1225,16 @@
 										</span>
 									{/if}
 								</h3>
+								<!-- SPEC-013 AC #5/#8: Precision badge -->
+								{#if candidatePrecLabel}
+									<div style="font-size: 0.7rem; color: var(--color-text-muted); margin-bottom: 0.25rem;">
+										tested at {candidatePrecLabel}
+										{#if hasBandMismatch}
+											<span class="badge warn" style="font-size: 0.65rem; margin-left: 0.25rem;">cached at {cachedBand}</span>
+										{/if}
+									</div>
+								{/if}
+								</div>
 								<div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
 									{#if isSkipped}
 										<button
@@ -1360,6 +1523,96 @@
 					</div>
 				</div>
 			{/if}
+		</div>
+	{/if}
+
+	<!-- SPEC-013 AC #6: Precision band cache-invalidation modal -->
+	{#if precisionModalOpen}
+		<div
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="precision-modal-title"
+			data-precision-modal
+			style="position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999;"
+		>
+			<div class="card" style="max-width: 500px; margin: 1rem; padding: 1.25rem;">
+				<h2 id="precision-modal-title" style="margin-top: 0;">Precision band mismatch</h2>
+				<p>
+					You have cached responses generated at a different precision band. Changing bands
+					means those results no longer match the new comparison frame.
+				</p>
+				<p>Choose how to handle the existing cache:</p>
+				<div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem;">
+					<button
+						type="button"
+						class="primary"
+						onclick={confirmClearCache}
+					>
+						Clear cache and re-run
+					</button>
+					<button
+						type="button"
+						class="secondary"
+						onclick={confirmKeepCacheMismatch}
+					>
+						Keep cache and flag mismatch in rating UI
+					</button>
+					<button
+						type="button"
+						class="secondary"
+						onclick={cancelPrecisionModal}
+					>
+						Cancel (keep current band)
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- SPEC-013 AC #9: No-provider error recovery modal -->
+	{#if noProviderModalOpen}
+		{@const w3snap = getW3State()}
+		{@const nextBand = fallbackBand(w3snap.w3Settings.precisionBand)}
+		<div
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="no-provider-modal-title"
+			data-no-provider-modal
+			style="position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999;"
+		>
+			<div class="card" style="max-width: 500px; margin: 1rem; padding: 1.25rem;">
+				<h2 id="no-provider-modal-title" style="margin-top: 0;">No provider available</h2>
+				<p>
+					OpenRouter could not find a provider that serves this model at the selected
+					precision band. You can fall back to a less restrictive band and re-run.
+				</p>
+				{#if nextBand}
+					<p>
+						Fallback: switch from <strong>{w3snap.w3Settings.precisionBand}</strong> to
+						<strong>{nextBand}</strong>.
+					</p>
+				{:else}
+					<p>You are already at the highest precision band (frontier). No further fallback is available. Try a different model ID.</p>
+				{/if}
+				<div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; flex-wrap: wrap;">
+					<button
+						type="button"
+						class="secondary"
+						onclick={dismissNoProviderModal}
+					>
+						Abort
+					</button>
+					{#if nextBand}
+						<button
+							type="button"
+							class="primary"
+							onclick={confirmNoProviderFallback}
+						>
+							Switch to {nextBand} band
+						</button>
+					{/if}
+				</div>
+			</div>
 		</div>
 	{/if}
 

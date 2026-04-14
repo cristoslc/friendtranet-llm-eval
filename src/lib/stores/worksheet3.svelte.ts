@@ -1,7 +1,7 @@
 import { dbGet } from './db';
 import { schedulePersist, plainify } from './persist';
 import type { ModelTier } from '$lib/data/tiers';
-import { modelTiers } from '$lib/data/tiers';
+import { modelTiers, MODEL_NATIVE_MAX_CONTEXT, DEFAULT_NATIVE_MAX_CONTEXT } from '$lib/data/tiers';
 import {
 	seededShuffle as pureSeededShuffle,
 	buildReplayMessages as pureBuildReplayMessages,
@@ -10,6 +10,17 @@ import {
 	computeTierMetricsPure,
 	personalMinimumTierPure
 } from './w3-pure';
+
+/** Precision band that governs which OpenRouter quantizations filter is sent. */
+export type PrecisionBand = 'local' | 'balanced' | 'frontier';
+
+export interface W3Settings {
+	/** Which quantization band to request from OpenRouter.
+	 * 'local' → fp4/int4, 'balanced' → fp8, 'frontier' → bf16/fp16. */
+	precisionBand: PrecisionBand;
+	/** Max context in tokens to request. Capped at the model's native max. */
+	maxContext: number;
+}
 
 export interface EvalResult {
 	conversationId: string;
@@ -24,6 +35,8 @@ export interface EvalResult {
 	 * response. Aggregation counts these as recorded gaps, not silent
 	 * absences. */
 	skippedTurns?: number[];
+	/** Precision band active when this result was cached (SPEC-013). */
+	cachedPrecision?: PrecisionBand;
 }
 
 /**
@@ -98,6 +111,8 @@ export interface W3State {
 	conversationExpansions: Record<string, ConversationExpansion>;
 	/** At most one active custom conversation (SPEC-007). */
 	customConversation: CustomConversation | null;
+	/** SPEC-013: precision band + context length settings. */
+	w3Settings: W3Settings;
 }
 
 const DEFAULT_PROGRESS: EvalProgress = {
@@ -112,6 +127,11 @@ const DEFAULT_PROGRESS: EvalProgress = {
 	lastMessage: ''
 };
 
+const DEFAULT_W3_SETTINGS: W3Settings = {
+	precisionBand: 'local',
+	maxContext: 131072
+};
+
 const DEFAULT_STATE: W3State = {
 	selectedConversations: [],
 	selectedTierIds: modelTiers.filter((t) => !t.isAnchor && t.defaultSelected).map((t) => t.id),
@@ -120,7 +140,8 @@ const DEFAULT_STATE: W3State = {
 	turnRatings: [],
 	evalProgress: { ...DEFAULT_PROGRESS },
 	conversationExpansions: {},
-	customConversation: null
+	customConversation: null,
+	w3Settings: { ...DEFAULT_W3_SETTINGS }
 };
 
 let state = $state<W3State>({ ...DEFAULT_STATE });
@@ -146,6 +167,12 @@ export async function loadW3() {
 		// responses for any turns that saved before closure are intact.
 		state.conversationExpansions = {};
 		state.customConversation = saved.customConversation ?? null;
+		// SPEC-013: restore precision settings, falling back to defaults for
+		// sessions that predate this field.
+		state.w3Settings = {
+			precisionBand: saved.w3Settings?.precisionBand ?? DEFAULT_W3_SETTINGS.precisionBand,
+			maxContext: saved.w3Settings?.maxContext ?? DEFAULT_W3_SETTINGS.maxContext
+		};
 	}
 	loaded = true;
 }
@@ -160,7 +187,9 @@ function saveW3() {
 				selectedTierIds: state.selectedTierIds,
 				modelOverrides: state.modelOverrides,
 				evalResults: state.evalResults,
-				turnRatings: state.turnRatings
+				turnRatings: state.turnRatings,
+				customConversation: state.customConversation,
+				w3Settings: state.w3Settings
 			})
 		);
 	} catch {
@@ -181,6 +210,94 @@ const DEFAULT_MAX_TOKENS = 8192;
  * have enough headroom to emit visible content after thinking-mode tokens. */
 export function resolveMaxTokens(tier: ModelTier): number {
 	return tier.maxTokens ?? DEFAULT_MAX_TOKENS;
+}
+
+/** Return native max context for a model ID, falling back to the global default. */
+export function modelNativeMax(modelId: string): number {
+	return MODEL_NATIVE_MAX_CONTEXT[modelId] ?? DEFAULT_NATIVE_MAX_CONTEXT;
+}
+
+/** Effective context ceiling: min of the user's chosen limit and model's native max. */
+export function effectiveMaxContext(modelId: string): number {
+	return Math.min(state.w3Settings.maxContext, modelNativeMax(modelId));
+}
+
+/** The quantizations array to send for the active precision band, or null if
+ * the band should be skipped for this modelId (anchor tier or gpt-oss-120b). */
+export function resolveQuantizations(modelId: string, isAnchor: boolean): string[] | null {
+	// Anchor stays at Anthropic defaults — no quantization filter.
+	if (isAnchor) return null;
+	// gpt-oss-120b is MXFP4-native — pinning any band would be redundant or
+	// wrong, so we let OpenRouter route naturally.
+	if (modelId === 'openai/gpt-oss-120b') return null;
+	const band = state.w3Settings.precisionBand;
+	if (band === 'local') return ['fp4', 'int4'];
+	if (band === 'balanced') return ['fp8'];
+	return ['bf16', 'fp16'];
+}
+
+/** Human-readable precision label for a model ID given the current band. */
+export function precisionLabel(modelId: string, isAnchor: boolean): string {
+	if (isAnchor) return 'frontier (Anthropic default)';
+	if (modelId === 'openai/gpt-oss-120b') return 'MXFP4 native — local and cloud match';
+	const band = state.w3Settings.precisionBand;
+	if (band === 'local') return 'fp4/int4 — matches local MLX 4-bit';
+	if (band === 'balanced') return 'fp8';
+	return 'bf16/fp16 — frontier quality';
+}
+
+/** Short summary for the "Sending as" disclosure line. */
+export function sendingAsSummary(): string {
+	const band = state.w3Settings.precisionBand;
+	const ctx = state.w3Settings.maxContext;
+	const ctxK = ctx >= 1000 ? `${Math.round(ctx / 1024)}K` : `${ctx}`;
+	if (band === 'local') return `fp4/int4 · ${ctxK} context`;
+	if (band === 'balanced') return `fp8 · ${ctxK} context`;
+	return `bf16/fp16 · ${ctxK} context`;
+}
+
+/** Whether any cached EvalResult was generated at a different precision band. */
+export function hasPrecisionMismatch(targetBand: PrecisionBand): boolean {
+	for (const result of Object.values(state.evalResults)) {
+		const cached = result.cachedPrecision ?? 'local';
+		if (cached !== targetBand) return true;
+	}
+	return false;
+}
+
+/** Update w3Settings and persist. Callers should check for cache mismatch
+ * (via hasPrecisionMismatch) before calling when changing precisionBand. */
+export function setW3Settings(settings: Partial<W3Settings>) {
+	state.w3Settings = { ...state.w3Settings, ...settings };
+	saveW3();
+}
+
+/** Clear all eval results that were cached at a band other than current. */
+export function clearMismatchedCache() {
+	const band = state.w3Settings.precisionBand;
+	const nextResults: Record<string, EvalResult> = {};
+	for (const [key, val] of Object.entries(state.evalResults)) {
+		const cached = val.cachedPrecision ?? 'local';
+		if (cached === band) nextResults[key] = val;
+	}
+	// Also drop ratings for conversations whose results were cleared.
+	const survivingKeys = new Set(Object.keys(nextResults));
+	state.evalResults = nextResults;
+	state.turnRatings = state.turnRatings.filter((tr) => {
+		// Keep ratings only if at least one model's result survived.
+		return Object.keys(state.evalResults).some((k) => k.startsWith(tr.conversationId + ':') && survivingKeys.has(k));
+	});
+	saveW3();
+}
+
+/** Mark all existing cached results with the current precision band
+ * (used when keeping cache with mismatch flag). */
+export function stampCachePrecision() {
+	const band = state.w3Settings.precisionBand;
+	for (const key of Object.keys(state.evalResults)) {
+		state.evalResults[key] = { ...state.evalResults[key], cachedPrecision: band };
+	}
+	saveW3();
 }
 
 export function setModelOverride(tierId: string, modelId: string | null) {
@@ -339,6 +456,8 @@ type ReplayOutcome =
 	| { kind: 'empty'; finishReason: string; usage?: UsageLike; reasoningContent?: string }
 	| { kind: 'truncated'; content: string; usage?: UsageLike; reasoningContent?: string }
 	| { kind: 'zdr-unavailable'; errorMessage: string }
+	/** No provider offered the requested precision band (SPEC-013 AC #9). */
+	| { kind: 'no-provider'; errorMessage: string }
 	| { kind: 'http-error'; status: number; body: string }
 	| { kind: 'exception'; error: Error };
 
@@ -348,15 +467,27 @@ type ReplayOutcome =
  *
  * `maxTokens` is the effective output budget — typically from
  * `resolveMaxTokens(tier)` so per-model overrides (e.g., qwen3.5-9b's 16384)
- * ride all the way to the wire. */
+ * ride all the way to the wire.
+ *
+ * `quantizations` is the SPEC-013 precision filter. Pass null to omit the
+ * provider block (anchor tier, gpt-oss-120b). */
 async function replayOneTurn(args: {
 	apiKey: string;
 	modelId: string;
 	messages: Array<{ role: string; content: string }>;
 	maxTokens: number;
+	quantizations: string[] | null;
 	signal?: AbortSignal;
 }): Promise<ReplayOutcome> {
 	try {
+		const body: Record<string, unknown> = {
+			model: args.modelId,
+			messages: args.messages,
+			max_tokens: args.maxTokens
+		};
+		if (args.quantizations && args.quantizations.length > 0) {
+			body.provider = { quantizations: args.quantizations };
+		}
 		const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
 			method: 'POST',
 			headers: {
@@ -365,11 +496,7 @@ async function replayOneTurn(args: {
 				'HTTP-Referer': window.location.origin,
 				'X-Title': 'Sovereignty Stack Decision SPA'
 			},
-			body: JSON.stringify({
-				model: args.modelId,
-				messages: args.messages,
-				max_tokens: args.maxTokens
-			}),
+			body: JSON.stringify(body),
 			signal: args.signal
 		});
 
@@ -382,6 +509,22 @@ async function replayOneTurn(args: {
 					kind: 'zdr-unavailable',
 					errorMessage:
 						'Not available under your OpenRouter ZDR / data-policy settings. Try a different model ID or adjust settings at https://openrouter.ai/settings/privacy.'
+				};
+			}
+			// SPEC-013 AC #9: OpenRouter returns 400/503 when no provider matches
+			// the requested quantizations. Surface a distinct outcome so callers
+			// can offer fallback-band recovery.
+			const isNoProvider =
+				(resp.status === 400 || resp.status === 503) &&
+				(errBody.includes('No providers') ||
+					errBody.includes('no provider') ||
+					errBody.includes('provider_unavailable') ||
+					errBody.includes('quantization') ||
+					errBody.includes('No matching provider'));
+			if (isNoProvider) {
+				return {
+					kind: 'no-provider',
+					errorMessage: `No provider available for the selected precision band. Consider switching to a less restrictive band.`
 				};
 			}
 			return { kind: 'http-error', status: resp.status, body: errBody.slice(0, 300) };
@@ -423,6 +566,7 @@ async function replayOneTurnWithRetry(args: {
 	modelId: string;
 	messages: Array<{ role: string; content: string }>;
 	baseBudget: number;
+	quantizations: string[] | null;
 	signal?: AbortSignal;
 }): Promise<{ outcome: ReplayOutcome; attempts: number }> {
 	let outcome = await replayOneTurn({
@@ -430,6 +574,7 @@ async function replayOneTurnWithRetry(args: {
 		modelId: args.modelId,
 		messages: args.messages,
 		maxTokens: args.baseBudget,
+		quantizations: args.quantizations,
 		signal: args.signal
 	});
 	if (outcome.kind === 'empty' && outcome.finishReason === 'length') {
@@ -438,6 +583,7 @@ async function replayOneTurnWithRetry(args: {
 			modelId: args.modelId,
 			messages: args.messages,
 			maxTokens: args.baseBudget * 2,
+			quantizations: args.quantizations,
 			signal: args.signal
 		});
 		if (retry.kind !== 'exception' || !args.signal?.aborted) {
@@ -480,7 +626,8 @@ function writeTurnResult(
 		responses,
 		cachedAt: new Date().toISOString(),
 		truncatedTurns,
-		skippedTurns: existing?.skippedTurns
+		skippedTurns: existing?.skippedTurns,
+		cachedPrecision: state.w3Settings.precisionBand
 	};
 }
 
@@ -560,6 +707,7 @@ export async function rerunPairFromTurn(
 			modelId: effectiveModelId,
 			messages: [...messages],
 			baseBudget: resolveMaxTokens(tier),
+			quantizations: resolveQuantizations(effectiveModelId, tier.isAnchor),
 			signal
 		});
 
@@ -601,6 +749,12 @@ export async function rerunPairFromTurn(
 				`${label} ${outcome.errorMessage}`
 			];
 			break;
+		} else if (outcome.kind === 'no-provider') {
+			state.evalProgress.errors = [
+				...state.evalProgress.errors,
+				`${label} [no-provider] ${outcome.errorMessage}`
+			];
+			break;
 		} else if (outcome.kind === 'exception') {
 			state.evalProgress.errors = [
 				...state.evalProgress.errors,
@@ -616,7 +770,8 @@ export async function rerunPairFromTurn(
 			conversationId: conv.id,
 			modelId: effectiveModelId,
 			responses: [...preserved, ...newResponses],
-			cachedAt: new Date().toISOString()
+			cachedAt: new Date().toISOString(),
+			cachedPrecision: state.w3Settings.precisionBand
 		};
 		state.evalProgress.done = 1;
 		saveW3();
@@ -799,11 +954,13 @@ async function processPairOneTurn(
 	];
 
 	const messages = buildReplayMessages(userTurns, preserved, turnIndex);
+	const quantizations = resolveQuantizations(effectiveModelId, tier.isAnchor);
 	const { outcome, attempts } = await replayOneTurnWithRetry({
 		apiKey,
 		modelId: effectiveModelId,
 		messages,
 		baseBudget: resolveMaxTokens(tier),
+		quantizations,
 		signal
 	});
 
@@ -846,6 +1003,10 @@ async function processPairOneTurn(
 	}
 	if (outcome.kind === 'zdr-unavailable') {
 		state.evalProgress.errors = [...state.evalProgress.errors, `${label} ${outcome.errorMessage}`];
+		return 'failed';
+	}
+	if (outcome.kind === 'no-provider') {
+		state.evalProgress.errors = [...state.evalProgress.errors, `${label} [no-provider] ${outcome.errorMessage}`];
 		return 'failed';
 	}
 	if (outcome.kind === 'http-error') {
