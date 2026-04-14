@@ -75,6 +75,11 @@ export interface ModelTier {
 	comfortableHardwareTierId: string | null;
 	/** Cross-family alternatives at a similar RAM envelope. */
 	alternatives: ModelTierAlternative[];
+	/** Fixed cloud quantization for models where OpenRouter has no band choice.
+	 * 'mxfp4' — model is natively MXFP4 (local and cloud match).
+	 * 'fp8'   — all cloud providers serve fp8 only; local MLX runs int4.
+	 * Omit for models that respect the active precision band. */
+	cloudQuantization?: 'mxfp4' | 'fp8';
 }
 
 /**
@@ -154,6 +159,7 @@ export const modelTiers: ModelTier[] = [
 		isAnchor: false,
 		defaultSelected: true,
 		note: '120B dense. Fits Mid tier. Strong ZDR availability via OpenAI-gateway providers.',
+		cloudQuantization: 'mxfp4',
 		peakRamGB: 91,
 		minHardwareTierId: 'mid',
 		comfortableHardwareTierId: 'high',
@@ -184,6 +190,7 @@ export const modelTiers: ModelTier[] = [
 		isAnchor: false,
 		defaultSelected: false,
 		note: '~200B dense. Requires Mac Studio M3 Ultra 256 GB (High, very tight) or 512 GB (Max, comfortable). OpenRouter serves fp8 only via SiliconFlow — local MLX runs at int4 (~230–245 GB). Same fp8/int4 caveat as Max tier.',
+		cloudQuantization: 'fp8',
 		peakRamGB: 238,
 		minHardwareTierId: 'high',
 		comfortableHardwareTierId: 'max',
@@ -196,6 +203,7 @@ export const modelTiers: ModelTier[] = [
 		isAnchor: false,
 		defaultSelected: false,
 		note: '17B active × 128 experts MoE. Requires Mac Studio M3 Ultra 512 GB (~$14K secondary market). OpenRouter serves fp8 only — local MLX runs at int4 (226 GB). Conversational quality gap is modest (~0.6 pp MMLU-Pro); technical-domain gap is material (up to 8 pp HumanEval). W3 precision badge documents the fp8/int4 delta.',
+		cloudQuantization: 'fp8',
 		peakRamGB: 251,
 		minHardwareTierId: 'max',
 		comfortableHardwareTierId: 'max',

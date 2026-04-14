@@ -783,7 +783,7 @@
 		</div>
 
 		<div style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: var(--color-bg); border-radius: var(--radius); font-size: 0.8rem; color: var(--color-text-muted);">
-			Active: <strong>{sendingAsSummary()}</strong> — applies to all candidate tiers. Anchor stays at Anthropic default. gpt-oss-120b is MXFP4 native regardless of band.
+			Active: <strong>{sendingAsSummary()}</strong> — applies to all candidate tiers. Anchor stays at Anthropic default. gpt-oss-120b is MXFP4 native; glm-4.6 and llama-4-maverick serve fp8 only — all three ignore the band selection.
 		</div>
 	</div>
 
@@ -1261,7 +1261,7 @@
 						)}
 						{@const candidatePrecLabel = tierInfo ? precisionLabel(modelId, tierInfo.isAnchor) : null}
 						{@const cachedBand = w3.evalResults[`${currentConv.id}:${modelId}`]?.cachedPrecision ?? null}
-						{@const hasBandMismatch = cachedBand !== null && cachedBand !== w3.w3Settings.precisionBand && !tierInfo?.isAnchor && modelId !== 'openai/gpt-oss-120b'}
+						{@const hasBandMismatch = cachedBand !== null && cachedBand !== w3.w3Settings.precisionBand && !tierInfo?.isAnchor && !tierInfo?.cloudQuantization}
 						<div
 							class="card"
 							style="margin-bottom: 0.75rem; border-left: 4px solid {isSkipped

@@ -223,13 +223,14 @@ export function effectiveMaxContext(modelId: string): number {
 }
 
 /** The quantizations array to send for the active precision band, or null if
- * the band should be skipped for this modelId (anchor tier or gpt-oss-120b). */
+ * the band should be skipped for this modelId (anchor tier or fixed-quantization
+ * models such as gpt-oss-120b, z-ai/glm-4.6, meta/llama-4-maverick). */
 export function resolveQuantizations(modelId: string, isAnchor: boolean): string[] | null {
 	// Anchor stays at Anthropic defaults — no quantization filter.
 	if (isAnchor) return null;
-	// gpt-oss-120b is MXFP4-native — pinning any band would be redundant or
-	// wrong, so we let OpenRouter route naturally.
-	if (modelId === 'openai/gpt-oss-120b') return null;
+	// Models with a fixed cloudQuantization are served at that format by all
+	// providers; pinning a different band would error or be redundant.
+	if (modelTiers.find((t) => t.modelId === modelId)?.cloudQuantization) return null;
 	const band = state.w3Settings.precisionBand;
 	if (band === 'local') return ['fp4', 'int4'];
 	if (band === 'balanced') return ['fp8'];
@@ -239,7 +240,9 @@ export function resolveQuantizations(modelId: string, isAnchor: boolean): string
 /** Human-readable precision label for a model ID given the current band. */
 export function precisionLabel(modelId: string, isAnchor: boolean): string {
 	if (isAnchor) return 'frontier (Anthropic default)';
-	if (modelId === 'openai/gpt-oss-120b') return 'MXFP4 native — local and cloud match';
+	const cq = modelTiers.find((t) => t.modelId === modelId)?.cloudQuantization;
+	if (cq === 'mxfp4') return 'MXFP4 native — local and cloud match';
+	if (cq === 'fp8') return 'fp8 only — cloud serves fp8, local runs int4';
 	const band = state.w3Settings.precisionBand;
 	if (band === 'local') return 'fp4/int4 — matches local MLX 4-bit';
 	if (band === 'balanced') return 'fp8';
