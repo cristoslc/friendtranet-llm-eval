@@ -2,10 +2,11 @@
 title: "Match W3 Evaluation to Local Precision and Context"
 artifact: SPEC-013
 track: implementable
-status: Ready
+status: Needs Manual Test
 author: Cristos
 created: 2026-04-13
 last-updated: 2026-04-13
+implemented: 2026-04-13
 type: enhancement
 parent-epic: EPIC-001
 linked-artifacts:
@@ -122,3 +123,4 @@ Every W3 call hits a provider that matches the user's local precision and contex
 | Phase | Date | Commit | Notes |
 |-------|------|--------|-------|
 | Ready | 2026-04-13 | | Initial creation. Based on trove `apple-silicon-model-tier-ram@198b2d9`. Addresses a validity issue discovered while mapping local hardware RAM requirements — without precision + context matching, the W3 evaluation is not a fair proxy for local capability. |
+| Needs Manual Test | 2026-04-13 | 2119351 | All 10 ACs implemented in worktree spec-013-precision and merged to trunk. Three files changed: tiers.ts (MODEL_NATIVE_MAX_CONTEXT), worksheet3.svelte.ts (W3Settings state + OpenRouter quantizations + cachedPrecision + helpers), +page.svelte (Settings panel, sending-as line, precision badges, two modals). Build and svelte-check pass with 0 errors. |
