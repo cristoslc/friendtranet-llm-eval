@@ -163,6 +163,62 @@ sources:
     content-hash: 90aabf6bdde3692268547f857931061365461b843e25b4ec0991b575c676c3d8
     notes: "Google's official Gemma 4 announcement; corroborates HF blog + wiki."
 
+  - id: qwen35-122b-config-json
+    url: https://huggingface.co/Qwen/Qwen3.5-122B-A10B/blob/main/config.json
+    type: repository
+    fetched: 2026-04-14
+    freshness-ttl: 365d
+    content-hash: ""
+    notes: "Real architecture: 48 layers, 12 full-attention (every 4th), 2 kv_heads, 256 head_dim. KV = 24,576 bytes/token."
+
+  - id: mlx-community-llama4-scout-instruct-4bit
+    url: https://huggingface.co/mlx-community/Llama-4-Scout-17B-16E-Instruct-4bit
+    type: repository
+    fetched: 2026-04-14
+    freshness-ttl: 180d
+    content-hash: ""
+    notes: "Confirmed instruct variant file size: 61.1 GB (12 shards). The 200 GB figure was an upload error, resolved upstream."
+
+  - id: mlx-lm-issue-76-scout-discrepancy
+    url: https://github.com/ml-explore/mlx-lm/issues/76
+    type: forum
+    fetched: 2026-04-14
+    freshness-ttl: 365d
+    content-hash: ""
+    notes: "mlx-lm maintainer (awni) confirmed 200 GB Instruct repo was an upload mistake and deleted it. Correct size is ~60 GB matching base."
+
+  - id: mlx-community-llama4-maverick-instruct-4bit
+    url: https://huggingface.co/mlx-community/Llama-4-Maverick-17B-128E-Instruct-4bit
+    type: repository
+    fetched: 2026-04-14
+    freshness-ttl: 180d
+    content-hash: ""
+    notes: "Maverick 4-bit MLX Instruct: 226 GB on disk. Community-converted from meta-llama/Llama-4-Maverick-17B-128E-Instruct."
+
+  - id: openrouter-maverick-providers
+    url: https://openrouter.ai/meta-llama/llama-4-maverick
+    type: web
+    fetched: 2026-04-14
+    freshness-ttl: 90d
+    content-hash: ""
+    notes: "All 5+ providers (DeepInfra, Fireworks AI, Together AI, GCP Vertex AI, NVIDIA NIM) serve Maverick at fp8 only."
+
+  - id: llmreference-maverick-fp8
+    url: https://www.llmreference.com/model/llama-4-maverick-17b-128e-instruct-fp8/openrouter
+    type: web
+    fetched: 2026-04-14
+    freshness-ttl: 90d
+    content-hash: ""
+    notes: "Cross-reference confirming fp8 across all Maverick providers on OpenRouter."
+
+  - id: aimultiple-fp8-vs-int4
+    url: https://aimultiple.com/llm-quantization
+    type: web
+    fetched: 2026-04-14
+    freshness-ttl: 365d
+    content-hash: ""
+    notes: "fp8 vs int4 quality delta: ~0.6 pp on MMLU-Pro, up to 8 pp on HumanEval. Conversational gap is modest; technical-domain gap is material."
+
 history:
   - event: created
     date: 2026-04-13
@@ -178,3 +234,8 @@ history:
     commit: "d681e07"
     sources-added: 6
     reason: "Cross-family alternatives per tier (Gemma 4 family, gpt-oss-20b, Llama 4 Scout). Synthesis now maps each tier (Mini→Large) with primary + alternative model options. Frontier models (GLM, Llama 4 Maverick) ruled out per operator decision; 2-bit quantization off-table."
+  - event: extended
+    date: 2026-04-14
+    commit: ""
+    sources-added: 7
+    reason: "SPIKE-002 research: (1) Qwen3.5-122B KV confirmed from config.json at 24,576 bytes/token (was ~30,000 est.); (2) Scout Instruct file size confirmed 61.1 GB, 200 GB was upload error; (3) Maverick fp8-only on all cloud providers, 226 GB at 4-bit MLX — Max tier reopened conditionally with precision-parity caveat."

@@ -8,7 +8,7 @@ This second extension adds **cross-family alternatives** at each tier — so use
 
 Also documents a validity caveat: OpenRouter providers serve at varying quantizations; W3 needs to pin `provider.quantizations` to produce a fair comparison (SPEC-013).
 
-Per operator decision, models above the Large tier (GLM-4.6 / GLM-5 / Llama 4 Maverick) are explicitly **ruled out** — they require Max-tier hardware that's hard to source (secondary market only) and would push the project's purchase recommendation outside most households' reach. 2-bit quantization is likewise off the table; 4-bit MLX is the maximum compression used in this mapping.
+Per operator decision, frontier-only models (GLM-4.6 / GLM-5) are ruled out — they require Max-tier hardware that's hard to source and push costs beyond most households. Llama 4 Maverick is now conditionally accepted as a new Max tier (SPIKE-002). 2-bit quantization is off the table; 4-bit MLX is the maximum compression used in this mapping.
 
 ## Final mapping (5 concurrent users × 128K context each)
 
@@ -33,7 +33,7 @@ Per operator decision, models above the Large tier (GLM-4.6 / GLM-5 / Llama 4 Ma
 | Model | Family | Weights | KV × 5 @ 128K | Peak RAM | Notes |
 |-------|--------|---------|---------------|----------|-------|
 | **openai/gpt-oss-120b** *(primary)* | OpenAI | 61 GB | 24 GB | **~91 GB** | MXFP4 native (only format). 5B active MoE. Full attention. |
-| meta/llama-4-scout | Meta | 60 GB (est.) | ~40 GB | **~106 GB** | 17B active × 16 experts MoE. Weights figure has a Instruct-variant discrepancy — verify. |
+| meta/llama-4-scout | Meta | **61.1 GB** | ~40 GB | **~106 GB** | 17B active × 16 experts MoE. 200 GB community figure was an upload error (resolved, repo deleted by maintainer). |
 
 ### Large tier (~96 GB envelope, Mid 128 GB min / High 256 GB comfortable)
 
@@ -41,7 +41,15 @@ Per operator decision, models above the Large tier (GLM-4.6 / GLM-5 / Llama 4 Ma
 |-------|--------|-----------------|---------------|----------|-------|
 | **qwen/qwen3.5-122b-a10b** *(primary)* | Alibaba | 70 GB | 20 GB | **~96 GB** | Hybrid attention. 10B active MoE. |
 
-No cross-family Large alternative was identified under the 4-bit-max constraint. The gap exists because: (a) Llama 4 Maverick is Max-tier-only (~200 GB at 4-bit); (b) Mistral's 2026 hybrid MoE successors are too small to land here; (c) GLM-4.6 is ruled out per frontier-model exclusion. Large tier is effectively a Qwen-only slot in the current market.
+No cross-family Large alternative was identified under the 4-bit-max constraint. Three reasons: Maverick is Max-tier-only (226 GB at 4-bit MLX); Mistral's 2026 hybrid MoE successors are too small; GLM-4.6 is ruled out per frontier-model exclusion. Large tier is a Qwen-only slot in the current market.
+
+### Max tier (~251 GB estimated peak RAM, 512 GB hardware required)
+
+| Model | Family | Weights (4-bit) | KV × 5 @ 128K | Peak RAM | Notes |
+|-------|--------|-----------------|---------------|----------|-------|
+| **meta/llama-4-maverick** *(conditional)* | Meta | **226 GB** (confirmed) | ~25 GB (est.) | **~251 GB** (est.) | fp8 cloud / int4 local mismatch. Accept conditionally — document delta. Requires Mac Studio M3 Ultra 512 GB (~$14K). KV architecture not yet verified from config.json. |
+
+All cloud providers (DeepInfra, Fireworks AI, Together AI, GCP Vertex AI, NVIDIA NIM) serve Maverick at **fp8 only**. Local MLX runs use int4. The quality gap is modest for conversation (~0.6 pp on MMLU-Pro) but material for technical tasks (up to 8 pp on HumanEval). The Max tier must carry a precision-parity caveat in W3.
 
 ### Anchor tier (cloud-only)
 
@@ -69,10 +77,10 @@ Formula: `KV_bytes/token = full_attn_layers × 2 × kv_heads × head_dim × 2 (b
 | gpt-oss-120b | all (full) | — | — | ~37,000 (official) | 4.8 GB | 24 GB |
 | gemma-4-26b-a4b | hybrid + shared KV | — | — | ~20,000 (est.) | 2.6 GB | 13 GB |
 | gemma-4-31b-dense | hybrid sliding | — | — | ~30,000 (est.) | 4 GB | 20 GB |
-| qwen3.5-122b-a10b | hybrid (est.) | — | — | ~30,000 (est.) | 4 GB | 20 GB |
+| qwen3.5-122b-a10b | 12 of 48 (hybrid) | 2 | 256 | **24,576** | 3.2 GB | **~16 GB** |
 | llama-4-scout | assumed full | — | — | ~60,000 (est.) | 8 GB | 40 GB |
 
-Architecture-confirmed numbers are marked "official" or with direct citations in the source files. Estimates are marked "(est.)" and carry the caveat that real numbers may differ by ±30%. The Large-tier Qwen estimate and the Llama 4 Scout estimate are the two I'd most like to validate empirically.
+Architecture-confirmed numbers are marked "official" or with direct citations in the source files. Estimates are marked "(est.)" and carry the caveat that real numbers may differ by ±30%. The Llama 4 Scout KV estimate is the primary remaining uncertainty; the Large-tier Qwen number is now confirmed from config.json.
 
 ## Context length notes per provider
 
@@ -97,18 +105,19 @@ Architecture-confirmed numbers are marked "official" or with direct citations in
 | Entry | Mac mini M4 Pro 64 GB | ~$2,400 | ~$984/yr | Mini, Small |
 | Mid | Mac Studio M4 Max 128 GB | ~$4,500 | ~$1,680/yr | Medium, Large (tight) |
 | High | Mac Studio M3 Ultra 256 GB | $7,899 | ~$2,808/yr | Medium, Large (comfortable) |
-| Max | Mac Studio M3 Ultra 512 GB (secondary) | ~$14,000 | ~$4,848/yr | Not needed for Mini → Large |
+| Max | Mac Studio M3 Ultra 512 GB (secondary) | ~$14,000 | ~$4,848/yr | Llama 4 Maverick (conditional, fp8/int4 caveat) |
 
 ## Worksheet 3 validity — OpenRouter quantization parity
 
-OpenRouter routes across providers at varying quantizations (int4/int8/fp4/fp6/fp8/fp16/bf16/fp32). W3 must pin `provider.quantizations` or the comparison isn't fair — covered in SPEC-013. For non-native-quantization models (everything except gpt-oss, which is MXFP4 everywhere), set `['fp4', 'int4']` to match MLX 4-bit.
+OpenRouter routes requests across providers at varying quantizations. W3 must pin `provider.quantizations` to make the comparison fair — covered in SPEC-013. Set `['fp4', 'int4']` for all models except gpt-oss (MXFP4 everywhere). For the Max tier (Maverick), fp8 is the only option; document the delta rather than filtering it out.
 
 ## Gaps / what's estimated
 
-- **Qwen3.5-122B-A10B** KV-bytes-per-token — estimated from family patterns; not measured from config.json.
-- **Llama 4 Scout** instruct-variant file size discrepancy (60 GB vs 200 GB community reports). Needs verification before committing to tier data.
-- **Llama 4 Scout** KV architecture — assumed full-attention absent concrete attention-layout docs. If it uses hybrid attention like Gemma 4 / Qwen3.5, the real KV cost is lower.
-- **Gemma 4** exact layer/head dims — the released blog posts describe the hybrid + shared-KV approach but don't publish the full config. Estimates are within a band supported by the Q4 file sizes.
+- ~~**Qwen3.5-122B-A10B** KV-bytes-per-token~~ — **Closed (SPIKE-002).** Real value: 24,576 bytes/token (12 full-attn of 48, 2 kv_heads, 256 head_dim).
+- ~~**Llama 4 Scout** instruct-variant file size discrepancy~~ — **Closed (SPIKE-002).** 200 GB was an upload error. Correct size: 61.1 GB.
+- **Llama 4 Scout** KV architecture — assumed full-attention; no published layer layout. If hybrid, the real KV cost is lower than the 40 GB / 106 GB estimates.
+- **Llama 4 Maverick** KV architecture — config.json not yet verified. Peak RAM (~251 GB) is estimated; hybrid attention could reduce it.
+- **Gemma 4** exact layer/head dims — blog posts describe hybrid + shared-KV but don't publish the full config. Estimates align with Q4 file sizes.
 
 ## Derived data for `src/lib/data/tiers.ts`
 
@@ -132,5 +141,6 @@ Primary values:
 | Mini | 34 | entry | entry | gpt-oss-20b (OpenAI), gemma-4-e4b (Google) |
 | Small | 40 | entry | entry | gemma-4-26b-a4b (Google), gemma-4-31b-dense (Google) |
 | Medium | 91 | mid | high | llama-4-scout (Meta) |
-| Large | 96 | mid | high | (no cross-family alternative under 4-bit-max constraint) |
+| Large | **92** | mid | high | (no cross-family alternative under 4-bit-max constraint) |
+| Max | **~251** | max | max | llama-4-maverick (Meta, conditional — fp8/int4 caveat) |
 | Anchor | 0 | cloud | cloud | — |
