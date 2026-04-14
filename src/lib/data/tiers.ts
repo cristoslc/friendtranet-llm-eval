@@ -42,6 +42,12 @@ export const hardwareTiers: HardwareTier[] = [
 	}
 ];
 
+export interface ModelTierAlternative {
+	modelId: string;
+	peakRamGB: number;
+	note: string;
+}
+
 export interface ModelTier {
 	id: string;
 	label: string;
@@ -58,6 +64,17 @@ export interface ModelTier {
 	 * before emitting visible content, or for providers with non-obvious
 	 * effective caps. Omit to inherit the shared default. */
 	maxTokens?: number;
+	/** Peak unified-memory footprint: 5 concurrent users × 128K context, 4-bit MLX.
+	 * 0 for cloud-only tiers (Anchor). Source: trove apple-silicon-model-tier-ram@d681e07. */
+	peakRamGB: number;
+	/** Minimum hardware tier ID that can sustain this load. References hardwareTiers.
+	 * 'cloud' for cloud-only tiers. */
+	minHardwareTierId: string;
+	/** Higher hardware tier where this model runs comfortably (not tight on RAM).
+	 * null for cloud-only tiers or tiers where min is already comfortable. */
+	comfortableHardwareTierId: string | null;
+	/** Cross-family alternatives at a similar RAM envelope. */
+	alternatives: ModelTierAlternative[];
 }
 
 export const modelTiers: ModelTier[] = [
@@ -68,7 +85,22 @@ export const modelTiers: ModelTier[] = [
 		isAnchor: false,
 		defaultSelected: true,
 		note: '9B dense. Fits any tier. Qwen 3.5 generation (Mar 2026). Reasoning-capable — bumped budget (16k) prevents empty-response truncation on long turns.',
-		maxTokens: 16384
+		maxTokens: 16384,
+		peakRamGB: 34,
+		minHardwareTierId: 'entry',
+		comfortableHardwareTierId: 'entry',
+		alternatives: [
+			{
+				modelId: 'openai/gpt-oss-20b',
+				peakRamGB: 34,
+				note: 'MXFP4 native; 3.6B active MoE; hybrid attention.'
+			},
+			{
+				modelId: 'google/gemma-4-e4b',
+				peakRamGB: 17,
+				note: 'PLE architecture; sub-Mini footprint.'
+			}
+		]
 	},
 	{
 		id: 'small',
@@ -76,7 +108,22 @@ export const modelTiers: ModelTier[] = [
 		modelId: 'qwen/qwen3.5-35b-a3b',
 		isAnchor: false,
 		defaultSelected: true,
-		note: '35B total / 3B active MoE. Fits Entry tier comfortably.'
+		note: '35B total / 3B active MoE. Fits Entry tier comfortably.',
+		peakRamGB: 40,
+		minHardwareTierId: 'entry',
+		comfortableHardwareTierId: 'entry',
+		alternatives: [
+			{
+				modelId: 'google/gemma-4-26b-a4b',
+				peakRamGB: 35,
+				note: '3.8B active MoE; hybrid + shared KV cache.'
+			},
+			{
+				modelId: 'google/gemma-4-31b-dense',
+				peakRamGB: 43,
+				note: 'Dense 31B; sliding-window attention.'
+			}
+		]
 	},
 	{
 		id: 'medium',
@@ -84,7 +131,17 @@ export const modelTiers: ModelTier[] = [
 		modelId: 'openai/gpt-oss-120b',
 		isAnchor: false,
 		defaultSelected: true,
-		note: '120B dense. Fits Mid tier. Strong ZDR availability via OpenAI-gateway providers.'
+		note: '120B dense. Fits Mid tier. Strong ZDR availability via OpenAI-gateway providers.',
+		peakRamGB: 91,
+		minHardwareTierId: 'mid',
+		comfortableHardwareTierId: 'high',
+		alternatives: [
+			{
+				modelId: 'meta/llama-4-scout',
+				peakRamGB: 106,
+				note: '17B active × 16 experts MoE; weight size unverified.'
+			}
+		]
 	},
 	{
 		id: 'large',
@@ -92,7 +149,11 @@ export const modelTiers: ModelTier[] = [
 		modelId: 'qwen/qwen3.5-122b-a10b',
 		isAnchor: false,
 		defaultSelected: true,
-		note: '122B total / 10B active MoE (Feb 2026). Drop-in replacement for qwen3-235b-a22b which frequently lacks ZDR endpoints. If this one also fails, try qwen/qwen3.5-397b-a17b or qwen/qwen3-235b-a22b-thinking-2507 via the override below.'
+		note: '122B total / 10B active MoE (Feb 2026). Drop-in replacement for qwen3-235b-a22b which frequently lacks ZDR endpoints. If this one also fails, try qwen/qwen3.5-397b-a17b or qwen/qwen3-235b-a22b-thinking-2507 via the override below.',
+		peakRamGB: 96,
+		minHardwareTierId: 'mid',
+		comfortableHardwareTierId: 'high',
+		alternatives: []
 	},
 	{
 		id: 'anchor',
@@ -100,6 +161,21 @@ export const modelTiers: ModelTier[] = [
 		modelId: 'anthropic/claude-opus-4-6',
 		isAnchor: true,
 		defaultSelected: true,
-		note: 'Frontier baseline. Anthropic has strong ZDR support.'
+		note: 'Frontier baseline. Anthropic has strong ZDR support.',
+		peakRamGB: 0,
+		minHardwareTierId: 'cloud',
+		comfortableHardwareTierId: null,
+		alternatives: []
 	}
 ];
+
+/** Native maximum context window per model (tokens).
+ * Used by SPEC-013 to cap max_tokens at the model's hard limit.
+ * Source: trove apple-silicon-model-tier-ram@d681e07. */
+export const MODEL_NATIVE_MAX_CONTEXT: Record<string, number> = {
+	'qwen/qwen3.5-9b': 32768,
+	'qwen/qwen3.5-35b-a3b': 32768,
+	'openai/gpt-oss-120b': 128000,
+	'qwen/qwen3.5-122b-a10b': 131072,
+	'anthropic/claude-opus-4-6': 200000
+};
