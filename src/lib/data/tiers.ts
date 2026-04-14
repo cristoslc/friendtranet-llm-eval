@@ -91,6 +91,7 @@ export const MODEL_NATIVE_MAX_CONTEXT: Record<string, number> = {
 	'openai/gpt-oss-120b': 128000,
 	'qwen/qwen3.5-122b-a10b': 131072,
 	'qwen/qwen3.5-397b-a17b': 131072,
+	'z-ai/glm-4.6': 204800,
 	'meta/llama-4-maverick': 131072,
 	'anthropic/claude-opus-4-6': 200000
 };
@@ -174,6 +175,18 @@ export const modelTiers: ModelTier[] = [
 		peakRamGB: 92,
 		minHardwareTierId: 'mid',
 		comfortableHardwareTierId: 'high',
+		alternatives: []
+	},
+	{
+		id: 'xl',
+		label: 'XL',
+		modelId: 'z-ai/glm-4.6',
+		isAnchor: false,
+		defaultSelected: false,
+		note: '~200B dense. Requires Mac Studio M3 Ultra 256 GB (High, very tight) or 512 GB (Max, comfortable). OpenRouter serves fp8 only via SiliconFlow — local MLX runs at int4 (~230–245 GB). Same fp8/int4 caveat as Max tier.',
+		peakRamGB: 238,
+		minHardwareTierId: 'high',
+		comfortableHardwareTierId: 'max',
 		alternatives: []
 	},
 	{

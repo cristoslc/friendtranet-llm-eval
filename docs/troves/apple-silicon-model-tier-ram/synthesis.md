@@ -104,7 +104,7 @@ Architecture-confirmed numbers are marked "official" or with direct citations in
 |------|--------|---------|-----------|-------------------------------------|
 | Entry | Mac mini M4 Pro 64 GB | ~$2,400 | ~$984/yr | Mini, Small |
 | Mid | Mac Studio M4 Max 128 GB | ~$4,500 | ~$1,680/yr | Medium, Large (tight) |
-| High | Mac Studio M3 Ultra 256 GB | $7,899 | ~$2,808/yr | Medium, Large (comfortable); GLM-4.6 XL tier (conditional, fp8/int4 caveat; ~230–245 GB peak, tight fit) |
+| High | Mac Studio M3 Ultra 256 GB | $7,899 | ~$2,808/yr | Medium, Large (comfortable); z-ai/glm-4.6 XL tier (conditional, fp8/int4 caveat; ~230–245 GB peak, tight fit) |
 | Max | Mac Studio M3 Ultra 512 GB (secondary) | ~$14,000 | ~$4,848/yr | Llama 4 Maverick (conditional, fp8/int4 caveat; ~251 GB peak) |
 
 ## Worksheet 3 validity — OpenRouter quantization parity
