@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0] - 2026-04-15
+
+### Features
+
+#### Unified Hardware-Tier Cost Bars
+
+All three worksheets now show the same stacked bar visualization comparing
+cumulative value against each hardware tier's annual TCO. W2's ✓/✗ badge
+list and W3's binary gate check have been replaced with the shared
+`HardwareTierBars` component used by W1 since launch. The home page gains a
+dedicated "Your data stays local" card that explicitly names OpenRouter as
+the only external destination.
+
+### Supporting Changes
+
+- `.gitignore` now covers `.env`, `__pycache__/`, and `.DS_Store`.
+
 ## [0.1.0] - 2026-04-14
 
 ### Features

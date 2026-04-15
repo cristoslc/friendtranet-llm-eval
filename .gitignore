@@ -20,3 +20,7 @@ build/
 .npmrc
 .vscode/
 tests/_*.mjs
+.env
+.env.*
+__pycache__/
+.DS_Store
