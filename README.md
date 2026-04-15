@@ -21,8 +21,15 @@ The decision integrates three dimensions — economic risk, values-based soverei
 
 ## Data sources
 
-Reference materials and prior conversation artifacts live in `data/sources/`. The authoritative build spec is `sovereignty-stack-spa-spec-v9.md`.
+Curated conversations are from WildBench and MT-Bench (CC-BY-4.0), bundled in `src/lib/data/`. Hardware tier RAM requirements are documented in `docs/troves/apple-silicon-model-tier-ram/`.
 
 ## Development
 
-TBD — stack and tooling decisions pending.
+```bash
+npm install
+npm run dev       # dev server on :5173
+npm run build     # static build → build/
+npx serve build   # preview the static build
+```
+
+Stack: SvelteKit 2, Svelte 5, TypeScript, adapter-static. No backend. State lives in IndexedDB.
