@@ -8,6 +8,7 @@
 		calibrationAnchors
 	} from '$lib/data/principles';
 	import { hardwareTiers } from '$lib/data/tiers';
+	import HardwareTierBars from '$lib/components/HardwareTierBars.svelte';
 	import {
 		getW2State,
 		loadW2,
@@ -63,21 +64,7 @@
 				<div style="font-size: 1.1rem; font-weight: 600;">{formatDollar(combinedTotal)}/yr</div>
 				<div class="small-note">Risk {formatDollar(w1Total)} + principle {formatDollar(adjustedWtp)}</div>
 
-				<h3 style="margin-top: 1rem;">Tier justification</h3>
-				{#each hardwareTiers as tier}
-					{@const justified = combinedTotal >= tier.annualTCO}
-					<div style="display: flex; justify-content: space-between; padding: 0.25rem 0; font-size: 0.75rem;">
-						<span>
-							{#if justified}
-								<span class="badge go" style="font-size: 0.65rem;">✓</span>
-							{:else}
-								<span class="badge skip" style="font-size: 0.65rem;">✗</span>
-							{/if}
-							{tier.label}
-						</span>
-						<span class="muted">{formatDollar(tier.annualTCO)}</span>
-					</div>
-				{/each}
+				<HardwareTierBars value={combinedTotal} heading="vs. hardware cost" />
 			</div>
 		</aside>
 

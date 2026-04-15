@@ -70,6 +70,7 @@
 	}
 	import bundleData from '$lib/data/curated-conversations.json';
 	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
+	import HardwareTierBars from '$lib/components/HardwareTierBars.svelte';
 
 	const bundle = bundleData as {
 		version: number;
@@ -518,20 +519,7 @@
 					tiers to test (including anchor)
 				</div>
 
-				{#if combined < 984}
-					<h3 style="margin-top: 1rem;">Gate check</h3>
-					<span class="badge skip">Below threshold</span>
-					<p class="small-note" style="margin-top: 0.5rem;">
-						Combined W1+W2 ({formatDollar(combined)}/yr) is below the Entry tier
-						({formatDollar(984)}/yr). You can still explore, but the economics aren't there.
-					</p>
-				{:else}
-					<h3 style="margin-top: 1rem;">Gate check</h3>
-					<span class="badge go">Passed</span>
-					<p class="small-note" style="margin-top: 0.5rem;">
-						Combined W1+W2 {formatDollar(combined)}/yr justifies testing.
-					</p>
-				{/if}
+				<HardwareTierBars value={combined} heading="vs. hardware cost" />
 
 				<h3 style="margin-top: 1rem;">Reset W3</h3>
 				<div style="display: flex; flex-direction: column; gap: 0.35rem;">

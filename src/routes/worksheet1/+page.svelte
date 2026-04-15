@@ -7,7 +7,7 @@
 		impactScales,
 		mitigationAnchors
 	} from '$lib/data/threats';
-	import { hardwareTiers } from '$lib/data/tiers';
+	import HardwareTierBars from '$lib/components/HardwareTierBars.svelte';
 	import {
 		getW1State,
 		loadW1,
@@ -119,26 +119,7 @@
 						</div>
 					{/if}
 
-					<h3 style="margin-top: 1rem;">vs. hardware cost</h3>
-					{#each hardwareTiers as tier}
-						{@const pct = Math.min(100, (computeTotalLoss() / tier.annualTCO) * 100)}
-						<div class="tier-bar">
-							<span class="tier-bar-label" style="width: 50px; font-size: 0.7rem;">
-								{tier.label}
-							</span>
-							<div class="tier-bar-track" style="height: 16px;">
-								<div
-									class="tier-bar-fill"
-									style="width: {pct}%; background: {pct >= 100
-										? 'var(--color-go)'
-										: 'var(--color-primary)'};"
-								></div>
-							</div>
-							<span class="tier-bar-amount" style="width: 60px; font-size: 0.7rem;">
-								{formatDollar(tier.annualTCO)}
-							</span>
-						</div>
-					{/each}
+					<HardwareTierBars value={computeTotalLoss()} />
 				{/if}
 			</div>
 		</aside>

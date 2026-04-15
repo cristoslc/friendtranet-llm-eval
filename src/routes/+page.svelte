@@ -66,10 +66,20 @@
 		<p style="margin-top: 0;">Then one person aggregates everyone's results into a group decision.</p>
 	</div>
 
-	<div class="card" style="text-align: center; padding: 2rem;">
-		<p class="muted" style="margin-bottom: 1rem;">
-			Everything stays in your browser. No backend, no analytics, no telemetry.
+	<div class="card" style="margin-top: 1.5rem;">
+		<h2>Your data stays local</h2>
+		<p>
+			All worksheet data is stored in your browser's IndexedDB. Nothing is sent to any server
+			except the API calls you initiate in Worksheet 3 — those go directly from your browser to
+			<strong>OpenRouter</strong> using your own API key.
 		</p>
+		<p style="margin-top: 0.5rem;">
+			No backend. No analytics. No telemetry. No data leaves your device unless you start an
+			evaluation in Worksheet 3.
+		</p>
+	</div>
+
+	<div class="card" style="text-align: center; padding: 2rem;">
 		<a href="{base}/worksheet1">
 			<button class="primary" style="font-size: 1rem; padding: 0.75rem 2rem;">
 				Begin Assessment
