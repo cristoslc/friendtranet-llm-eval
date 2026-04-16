@@ -5,6 +5,7 @@ export interface HardwareTier {
 	upfront: number;
 	annualTCO: number;
 	capabilityCeiling: string;
+	tcoBreakdown: string;
 }
 
 export const hardwareTiers: HardwareTier[] = [
@@ -14,7 +15,8 @@ export const hardwareTiers: HardwareTier[] = [
 		config: 'Mac mini M4 Pro 64GB 2TB',
 		upfront: 2400,
 		annualTCO: 984,
-		capabilityCeiling: 'Qwen3-Next-80B-A3B (tight)'
+		capabilityCeiling: 'Qwen3-Next-80B-A3B (tight)',
+		tcoBreakdown: '$800/yr amortization + $184/yr power/ops'
 	},
 	{
 		id: 'mid',
@@ -22,15 +24,17 @@ export const hardwareTiers: HardwareTier[] = [
 		config: 'Mac Studio M4 Max 128GB 2TB',
 		upfront: 4500,
 		annualTCO: 1680,
-		capabilityCeiling: 'GPT-OSS-120B comfortable'
+		capabilityCeiling: 'GPT-OSS-120B comfortable',
+		tcoBreakdown: '$1,500/yr amortization + $180/yr power/ops'
 	},
 	{
 		id: 'nvidia-spark',
 		label: 'DGX Spark',
 		config: 'NVIDIA DGX Spark GB10 128GB 4TB',
 		upfront: 4699,
-		annualTCO: 1649,
-		capabilityCeiling: '~200B FP4; 70B FP16 comfortable'
+		annualTCO: 1899,
+		capabilityCeiling: '~200B FP4; 70B FP16 comfortable',
+		tcoBreakdown: '$1,566/yr amortization + $333/yr power/ops (240W)'
 	},
 	{
 		id: 'high',
@@ -38,7 +42,8 @@ export const hardwareTiers: HardwareTier[] = [
 		config: 'Mac Studio M3 Ultra 256GB 2TB',
 		upfront: 7899,
 		annualTCO: 2808,
-		capabilityCeiling: 'Qwen3-235B-A22B comfortable'
+		capabilityCeiling: 'Qwen3-235B-A22B comfortable',
+		tcoBreakdown: '$2,633/yr amortization + $175/yr power/ops'
 	},
 	{
 		id: 'max',
@@ -46,7 +51,8 @@ export const hardwareTiers: HardwareTier[] = [
 		config: 'Mac Studio M3 Ultra 512GB (secondary market)',
 		upfront: 14000,
 		annualTCO: 4848,
-		capabilityCeiling: 'Qwen3.5-397B / GLM-5.1 / MiniMax M2.7'
+		capabilityCeiling: 'Qwen3.5-397B / GLM-5.1 / MiniMax M2.7',
+		tcoBreakdown: '$4,667/yr amortization + $181/yr power/ops'
 	}
 ];
 

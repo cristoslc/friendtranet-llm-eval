@@ -6,7 +6,7 @@
 		heading?: string;
 	}
 
-	let { value, heading = 'vs. hardware cost' }: Props = $props();
+	let { value, heading = 'vs. annual TCO (amortized purchase + power)' }: Props = $props();
 
 	let expanded = $state<Record<string, boolean>>({});
 
@@ -47,7 +47,7 @@
 		{#if expanded[tier.id]}
 			<div class="tier-detail">
 				<span class="tier-detail-config">{tier.config}</span>
-				<span class="tier-detail-cost">{fmt(tier.upfront)} upfront · {fmt(tier.annualTCO)}/yr TCO</span>
+				<span class="tier-detail-cost">{fmt(tier.upfront)} upfront · {tier.tcoBreakdown}</span>
 				<span class="tier-detail-ceiling">{tier.capabilityCeiling}</span>
 			</div>
 		{/if}
