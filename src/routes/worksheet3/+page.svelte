@@ -70,7 +70,7 @@
 	}
 	import bundleData from '$lib/data/curated-conversations.json';
 	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
-	import HardwareTierBars from '$lib/components/HardwareTierBars.svelte';
+	import SummaryCard from '$lib/components/SummaryCard.svelte';
 
 	const bundle = bundleData as {
 		version: number;
@@ -507,20 +507,13 @@
 				adequate tier.
 			</p>
 
-			<div class="summary-card">
-				<h3>Selection</h3>
-				<div class="small-note">
-					<strong>{w3.selectedConversations.length}</strong> conversations selected
-				</div>
-				<div class="small-note">
-					<strong>
-						{modelTiers.filter((t) => w3.selectedTierIds.includes(t.id) || t.isAnchor).length}
-					</strong>
-					tiers to test (including anchor)
-				</div>
-
-				<HardwareTierBars value={combined} heading="vs. hardware cost" />
-
+			<SummaryCard
+				label="Selection"
+				value={w3.selectedConversations.length}
+				valueSuffix=" conversations"
+				breakdown={[{ label: 'Tiers to test (incl. anchor)', value: modelTiers.filter((t) => w3.selectedTierIds.includes(t.id) || t.isAnchor).length }]}
+				tierValue={combined}
+			>
 				<h3 style="margin-top: 1rem;">Reset W3</h3>
 				<div style="display: flex; flex-direction: column; gap: 0.35rem;">
 					<button
@@ -551,7 +544,7 @@
 					Each scope resets your results. Ratings-only keeps cached responses so
 					re-rating is free.
 				</p>
-			</div>
+			</SummaryCard>
 		</aside>
 
 		<main>

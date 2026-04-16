@@ -7,7 +7,7 @@
 		impactScales,
 		mitigationAnchors
 	} from '$lib/data/threats';
-	import HardwareTierBars from '$lib/components/HardwareTierBars.svelte';
+	import SummaryCard from '$lib/components/SummaryCard.svelte';
 	import {
 		getW1State,
 		loadW1,
@@ -23,6 +23,7 @@
 		computeTotalLoss,
 		completedRowCount
 	} from '$lib/stores/worksheet1.svelte';
+	import { loadW2, computeAdjustedWtp } from '$lib/stores/worksheet2.svelte';
 	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
 
 	let showPremium = $state(false);
@@ -36,7 +37,7 @@
 	let focusedLegend = $state<LegendKey>(null);
 
 	onMount(() => {
-		loadW1();
+		Promise.all([loadW1(), loadW2()]);
 	});
 
 	function formatDollar(n: number): string {
@@ -102,26 +103,23 @@
 				<strong>{completedRowCount()}</strong> of {threats.length} threats assessed.
 			</p>
 
-			<!-- Summary card lives in the left panel: globals/orientation -->
-			<div class="summary-card">
-				<h3>Your risk estimate</h3>
-				{#if completedRowCount() === 0}
-					<p class="small-note" style="margin: 0;">
-						Set probability and impact for at least one threat to see your estimate.
-					</p>
-				{:else}
-					<div class="big-value">{formatDollar(computeTotalLoss())}/year</div>
-					{#if computePremium() > 0}
-						<div class="small-note">
-							Base {formatDollar(computeBaseLoss())} + premium {formatDollar(
-								computePremium()
-							)}
-						</div>
-					{/if}
-
-					<HardwareTierBars value={computeTotalLoss()} />
-				{/if}
-			</div>
+			<SummaryCard
+				label="Your risk estimate"
+				value={computeTotalLoss()}
+				valueSuffix="/year"
+				breakdown={computePremium() > 0
+					? [{ label: 'Base', value: computeBaseLoss() }, { label: '+ premium', value: computePremium() }]
+					: []}
+				combinedLabel={computeAdjustedWtp() > 0 ? 'Combined (W1 + W2)' : null}
+				combinedValue={computeTotalLoss() + computeAdjustedWtp()}
+				combinedBreakdown={computeAdjustedWtp() > 0
+					? [{ label: 'Risk', value: computeTotalLoss() }, { label: '+ principle', value: computeAdjustedWtp() }]
+					: null}
+				tierValue={computeTotalLoss() + computeAdjustedWtp()}
+				emptyMessage={completedRowCount() === 0
+					? 'Set probability and impact for at least one threat to see your estimate.'
+					: null}
+			/>
 		</aside>
 
 		<main>

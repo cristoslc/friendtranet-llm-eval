@@ -7,8 +7,7 @@
 		compromiseOptions,
 		calibrationAnchors
 	} from '$lib/data/principles';
-	import { hardwareTiers } from '$lib/data/tiers';
-	import HardwareTierBars from '$lib/components/HardwareTierBars.svelte';
+	import SummaryCard from '$lib/components/SummaryCard.svelte';
 	import {
 		getW2State,
 		loadW2,
@@ -49,23 +48,18 @@
 			<h1>Worksheet 2: Principle Scorecard</h1>
 			<p>Even if the risk is low, what would you pay for local control?</p>
 
-			<div class="summary-card">
-				<h3>Your WTP</h3>
-				{#if w2.wtpAmount === 0 && w2.stance !== 'none'}
-					<p class="small-note" style="margin: 0;">Set your willingness-to-pay to see your estimate.</p>
-				{:else}
-					<div class="big-value">{formatDollar(adjustedWtp)}/yr</div>
-					<div class="small-note">
-						Raw {formatDollar(w2.wtpAmount)} — monthly ~{formatDollar(computeMonthlyWtp())}
-					</div>
-				{/if}
-
-				<h3 style="margin-top: 1rem;">Combined (W1 + W2)</h3>
-				<div style="font-size: 1.1rem; font-weight: 600;">{formatDollar(combinedTotal)}/yr</div>
-				<div class="small-note">Risk {formatDollar(w1Total)} + principle {formatDollar(adjustedWtp)}</div>
-
-				<HardwareTierBars value={combinedTotal} heading="vs. hardware cost" />
-			</div>
+			<SummaryCard
+				label="Your WTP"
+				value={adjustedWtp}
+				breakdown={[{ label: 'Raw', value: w2.wtpAmount }, { label: '— monthly ~', value: computeMonthlyWtp() }]}
+				combinedLabel="Combined (W1 + W2)"
+				combinedValue={combinedTotal}
+				combinedBreakdown={[{ label: 'Risk', value: w1Total }, { label: '+ principle', value: adjustedWtp }]}
+				tierValue={combinedTotal}
+				emptyMessage={w2.wtpAmount === 0 && w2.stance !== 'none'
+					? 'Set your willingness-to-pay to see your estimate.'
+					: null}
+			/>
 		</aside>
 
 		<main>
@@ -200,32 +194,6 @@
 		</div>
 	{/if}
 
-	<!-- Gate check message — kept in main column as the inline decision panel -->
-	<div class="card" style="margin-top: 1.5rem;">
-		{#if hardwareTiers.some((t) => combinedTotal >= t.annualTCO)}
-			{@const justifiedTiers = hardwareTiers.filter((t) => combinedTotal >= t.annualTCO)}
-			<div class="decision-card go">
-				<h2>Tier{justifiedTiers.length > 1 ? 's' : ''} economically justified</h2>
-				<p>
-					Your combined risk + principle value ({formatDollar(combinedTotal)}/year) justifies:
-					<strong>{justifiedTiers.map((t) => t.label).join(', ')}</strong>.
-				</p>
-				<p class="muted">Worksheet 3 tests whether those tiers are capable enough for your work.</p>
-			</div>
-		{:else}
-			<div class="decision-card skip">
-				<h2>No tier justified</h2>
-				<p>
-					Your combined value ({formatDollar(combinedTotal)}/year) doesn't reach the annual
-					cost of any hardware tier. The math says stay on cloud APIs.
-				</p>
-				<p class="muted">
-					You can still explore Worksheet 3 if you're curious, but the economic case isn't
-					there.
-				</p>
-			</div>
-		{/if}
-	</div>
 		</main>
 
 		<aside class="margin-panel">

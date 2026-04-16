@@ -2,6 +2,7 @@
 	import { base } from '$app/paths';
 	import { hardwareTiers } from '$lib/data/tiers';
 	import { validateImport, type ExportData } from '$lib/stores/export';
+	import SummaryCard from '$lib/components/SummaryCard.svelte';
 	import WorkflowFooter from '$lib/components/WorkflowFooter.svelte';
 
 	let members = $state<ExportData[]>([]);
@@ -180,28 +181,23 @@ th{background:#f5f5f5}.flag{padding:0.75rem;border-left:4px solid #d97706;backgr
 		<h1>Group Aggregation</h1>
 		<p>Import exported worksheets from group members and compute the group decision.</p>
 
-		<div class="summary-card">
-			<h3>Imported</h3>
-			<div class="big-value">{members.length}</div>
-			<div class="small-note">member{members.length === 1 ? '' : 's'}</div>
-
-			{#if members.length > 0}
-				<h3 style="margin-top: 1rem;">Group total</h3>
-				<div style="font-size: 1.1rem; font-weight: 600;">
-					{formatDollar(groupCombinedTotal())}/yr
-				</div>
-				<div class="small-note">
-					Risk {formatDollar(groupRiskTotal())} + principle {formatDollar(
-						groupPrincipleTotal()
-					)}
-				</div>
-
-				{#if capabilityFloor()}
-					<h3 style="margin-top: 1rem;">Capability floor</h3>
-					<div class="small-note">{capabilityFloor()}</div>
-				{/if}
+		<SummaryCard
+			label="Imported"
+			value={members.length}
+			valueSuffix=" member{members.length === 1 ? '' : 's'}"
+			combinedLabel={members.length > 0 ? 'Group total' : null}
+			combinedValue={groupCombinedTotal()}
+			combinedBreakdown={members.length > 0
+				? [{ label: 'Risk', value: groupRiskTotal() }, { label: '+ principle', value: groupPrincipleTotal() }]
+				: null}
+			tierValue={groupCombinedTotal()}
+			emptyMessage={members.length === 0 ? 'Import member exports to see group totals.' : null}
+		>
+			{#if capabilityFloor()}
+				<h3 style="margin-top: 1rem;">Capability floor</h3>
+				<div class="small-note">{capabilityFloor()}</div>
 			{/if}
-		</div>
+		</SummaryCard>
 	</aside>
 
 	<main>

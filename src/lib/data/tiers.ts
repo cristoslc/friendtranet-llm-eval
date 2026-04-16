@@ -25,6 +25,14 @@ export const hardwareTiers: HardwareTier[] = [
 		capabilityCeiling: 'GPT-OSS-120B comfortable'
 	},
 	{
+		id: 'nvidia-spark',
+		label: 'DGX Spark',
+		config: 'NVIDIA DGX Spark GB10 128GB 4TB',
+		upfront: 4699,
+		annualTCO: 1649,
+		capabilityCeiling: '~200B FP4; 70B FP16 comfortable'
+	},
+	{
 		id: 'high',
 		label: 'High',
 		config: 'Mac Studio M3 Ultra 256GB 2TB',

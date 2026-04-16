@@ -98,6 +98,21 @@ A reusable Svelte component in `$lib/components/` that renders the full summary-
 - `tierValue=groupCombinedTotal()`.
 - Add `HardwareTierBars` to the aggregation summary-card (currently missing).
 
+### Tier info tooltips on HardwareTierBars
+
+- Each tier row in `HardwareTierBars` shows an info icon (ℹ or similar) next to the tier label.
+- Hovering or focusing the icon shows a tooltip with the tier's hardware config, upfront cost, and annual TCO.
+- The tooltip uses a native `title` attribute or a small CSS tooltip component (accessible, no JS dependency).
+- Tooltip content format: `Mid — Mac Studio M4 Max 128GB 2TB — $4,500 upfront / $1,680/yr TCO`.
+
+### NVIDIA DGX Spark tier
+
+- Add a new hardware tier for the **NVIDIA DGX Spark** (GB10 Grace Blackwell, 128GB unified memory, 4TB SSD).
+- Upfront: ~$4,699. Annual TCO: ~$1,649 ($4,699 / 36mo + ~$35/mo power/ops at 240W).
+- Capability ceiling: ~200B params at FP4; 70B params at FP16 comfortable (128GB unified, 273 GB/s bandwidth — slower than Apple Silicon but more VRAM than Mid tier).
+- Same 128GB RAM class as Mid (Mac Studio M4 Max 128GB). Positioned after Mid, before High — same tier order as TCO ascending. The DGX Spark trades Apple's memory bandwidth for CUDA ecosystem access and FP4 inference at ~200B params.
+- Tier id: `nvidia-spark`. Label: `DGX Spark`. Config: `NVIDIA DGX Spark GB10 128GB 4TB`.
+
 ### Gate check removal from W2 main column
 
 - The W2 gate check `decision-card` in the main column (lines 203-228) is **redundant** now that the summary-card shows the same tier justification via `HardwareTierBars`. Remove it. The summary-card in the left panel is the single source of truth for tier justification.
@@ -113,6 +128,10 @@ A reusable Svelte component in `$lib/components/` that renders the full summary-
 7. **Given** W3 page, **when** the summary-card renders, **then** the W3 reset buttons appear below the `HardwareTierBars` in the `extra` snippet.
 8. **Given** the `SummaryCard` component, **when** `emptyMessage` is set, **then** only the empty message renders (no value, no bars).
 9. **Given** any page, **when** comparing the summary-card across W1, W2, W3, and aggregation, **then** the `HardwareTierBars` visual treatment is identical: same bar heights, same fill colors, same tier labels and amounts.
+10. **Given** any `HardwareTierBars` row, **when** the user hovers or focuses the info icon next to the tier label, **then** a tooltip appears showing the tier's hardware config, upfront cost, and annual TCO.
+11. **Given** the `HardwareTierBars` component, **when** five tiers are defined (Entry, Mid, DGX Spark, High, Max), **then** five rows render with the DGX Spark row positioned after Mid (same 128GB RAM class, lower TCO than High).
+12. **Given** the DGX Spark tier, **when** the tooltip renders, **then** it shows "NVIDIA DGX Spark GB10 128GB 4TB — $4,699 upfront / $1,649/yr TCO".
+13. **Given** a combined value of $1,680/yr, **when** the tier bars render, **then** the Mid tier bar fills to 100% (justified) and the DGX Spark tier bar fills to ~102% (also justified).
 
 ## Verification
 
@@ -127,9 +146,10 @@ A reusable Svelte component in `$lib/components/` that renders the full summary-
 - W1 loads W2 data on mount for combined value.
 - Remove W2 main-column gate check `decision-card` (redundant with summary-card `HardwareTierBars`).
 - Add `HardwareTierBars` to aggregation summary-card.
+- Add info-icon tooltip to each `HardwareTierBars` row showing config, upfront, and TCO.
+- Add NVIDIA DGX Spark as a new hardware tier in `tiers.ts`.
 
 **Out of scope:**
-- Changing `HardwareTierBars` component itself (it stays as-is, rendered by `SummaryCard`).
 - Persisting a display name preference for the aggregation auto-load (SPEC-017).
 - Adding new breakdown dimensions (e.g., per-threat in the summary-card).
 - Changing the W3 main-column results table or rating UI.
@@ -137,11 +157,13 @@ A reusable Svelte component in `$lib/components/` that renders the full summary-
 ## Implementation Approach
 
 1. **Create `SummaryCard.svelte`:** Extract the common summary-card pattern into a new component. The `.summary-card` CSS class stays in `app.css`; the component renders the markup that uses it. Takes props as described; renders `HardwareTierBars` internally.
-2. **Refactor W1:** Import `SummaryCard`, `loadW2`, `computeAdjustedWtp` from W2 store. Replace the inline summary-card markup. Pass combined value as `tierValue`.
-3. **Refactor W2:** Import `SummaryCard`. Replace inline summary-card markup. Remove the gate check `decision-card` from main column (lines 203-228).
-4. **Refactor W3:** Import `SummaryCard`. Replace inline summary-card markup. Pass reset buttons as `extra` snippet.
-5. **Refactor aggregation:** Import `SummaryCard`. Replace inline summary-card markup. Pass `tierValue=groupCombinedTotal()`.
-6. **Verify:** Visual consistency across all four pages. Edge cases: no data, partial data (W1 only, no W3), full data.
+2. **Add DGX Spark tier:** In `tiers.ts`, insert a `HardwareTier` entry for DGX Spark (`id: 'nvidia-spark'`) between Mid and High. Upfront $4,699, annual TCO ~$1,649, capability ceiling "~200B params FP4; 70B FP16 comfortable".
+3. **Add tooltip to `HardwareTierBars`:** Add an info icon (using Unicode ℹ or a small SVG) next to each tier label. On hover/focus, show a CSS tooltip or native `title` with config + upfront + TCO. Style the tooltip to match the app's design system.
+4. **Refactor W1:** Import `SummaryCard`, `loadW2`, `computeAdjustedWtp` from W2 store. Replace the inline summary-card markup. Pass combined value as `tierValue`.
+5. **Refactor W2:** Import `SummaryCard`. Replace inline summary-card markup. Remove the gate check `decision-card` from main column (lines 203-228).
+6. **Refactor W3:** Import `SummaryCard`. Replace inline summary-card markup. Pass reset buttons as `extra` snippet.
+7. **Refactor aggregation:** Import `SummaryCard`. Replace inline summary-card markup. Pass `tierValue=groupCombinedTotal()`.
+8. **Verify:** Visual consistency across all four pages. Edge cases: no data, partial data (W1 only, no W3), full data. Tooltip appears and dismisses correctly on hover/focus/blur.
 
 ## Lifecycle
 

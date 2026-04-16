@@ -2,7 +2,6 @@
 	import { hardwareTiers } from '$lib/data/tiers';
 
 	interface Props {
-		/** The cumulative annual value ($/yr) to compare against each tier's TCO. */
 		value: number;
 		heading?: string;
 	}
@@ -18,8 +17,12 @@
 {#each hardwareTiers as tier}
 	{@const pct = Math.min(100, (value / tier.annualTCO) * 100)}
 	<div class="tier-bar">
-		<span class="tier-bar-label" style="width: 50px; font-size: 0.7rem;">
+		<span class="tier-bar-label" style="width: 80px; font-size: 0.7rem;">
 			{tier.label}
+			<span
+				class="tier-info-icon"
+				title="{tier.config} — {fmt(tier.upfront)} upfront / {fmt(tier.annualTCO)}/yr TCO"
+			>ℹ</span>
 		</span>
 		<div class="tier-bar-track" style="height: 16px;">
 			<div
@@ -29,8 +32,23 @@
 					: 'var(--color-primary)'};"
 			></div>
 		</div>
-		<span class="tier-bar-amount" style="width: 60px; font-size: 0.7rem;">
+		<span class="tier-bar-amount" style="width: 80px; font-size: 0.7rem;">
 			{fmt(tier.annualTCO)}
 		</span>
 	</div>
 {/each}
+
+<style>
+	.tier-info-icon {
+		cursor: help;
+		font-size: 0.65rem;
+		opacity: 0.5;
+		margin-left: 0.15rem;
+		vertical-align: super;
+		transition: opacity 0.15s;
+	}
+
+	.tier-info-icon:hover {
+		opacity: 1;
+	}
+</style>
