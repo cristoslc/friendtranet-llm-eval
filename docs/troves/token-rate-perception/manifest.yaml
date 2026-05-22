@@ -1,0 +1,37 @@
+id: token-rate-perception
+created: 2026-05-22
+refreshed: 2026-05-22
+last-event: created
+tags:
+  - llm-token-rate
+  - perceptual-benchmark
+  - tokenization-visualization
+  - user-experience
+  - llm-benchmarking
+
+default-freshness-ttl: 365d
+
+referenced-by: []
+
+sources:
+  - id: tokenspeed-webpage
+    url: https://mikeveerman.github.io/tokenspeed/?rate=10&mode=text
+    type: web
+    fetched: 2026-05-22
+    freshness-ttl: 365d
+    content-hash: b04bf506dbbc2522800d7eed88f5d7b06e5ef448805e9452e5bb522f8ec34c00
+    notes: "Primary tool — browser app rendering fake tokens at configurable rates to internalize tok/s numbers."
+
+  - id: tokenspeed-repo
+    url: https://github.com/MikeVeerman/tokenspeed
+    type: repository
+    fetched: 2026-05-22
+    freshness-ttl: 365d
+    content-hash: 2df1bf5e3679ad6a8e14febc169aed031fe036613f77dcae57cbef8e12736a87
+    notes: "GitHub repo — both web app (index.html) and CLI counterpart (tokenspeed.py). Documents tokenization model, presets, and design rationale."
+
+history:
+  - event: created
+    date: 2026-05-22
+    commit: "--"
+    sources: 2
